@@ -1,0 +1,6 @@
+.claude/
+.env
+.env.staging
+__pycache__/
+*.pyc
+node_modules/
