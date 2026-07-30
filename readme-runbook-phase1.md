@@ -151,8 +151,126 @@ constitution's own governance rule, not just light on detail — go
 back and ask for revisions rather than proceeding to `/speckit-plan`
 with a gap.
 
-**Result**: ⏳ PENDING — paste the actual output here once run, including
-where the spec file was written.
+**Result**: ✅ VERIFIED via direct `cat` of the file (not terminal trust
+alone — see §7's known-issue below for why that distinction mattered).
+Saved at `specs/001-foundation-platform-skeleton/spec.md`. Five
+prioritized user stories (P1: local environment + RBAC enforcement;
+P2: audit logging, health check, testing infrastructure), 34 numbered
+functional requirements grouped by area, explicit Key Entities
+(User, Role, AuditLog, HealthStatus), 11 measurable Success Criteria,
+explicit Out of Scope section, and Assumptions/Dependencies sections.
+
+Compliance check — all three constitution principles explicitly
+addressed:
+- Audit logging (Principle II): FR-018 to FR-024, including the
+  write-fails-but-action-succeeds edge case (FR-022)
+- Server-side RBAC (Principle III): FR-008 to FR-017, explicitly
+  stating UI-hiding alone is insufficient (FR-011)
+- Testing infrastructure (Principle V): FR-029 to FR-034 — correctly
+  written technology-agnostic ("automated test suite," "reusable
+  test-data builders") rather than naming pytest/Factory Boy directly,
+  since specs describe *what*, not *how*; watch for those names to
+  appear in `/speckit-plan` instead
+
+Also correctly enforces Principle VI (Phase 0 spike is not a
+dependency) and Principle I (local-first, testable via "outbound
+network blocked" acceptance scenario).
+
+**Quality checklist** (`checklists/requirements.md`) also verified
+saved — includes a full traceability matrix (every requirement group
+→ user story → success criteria) and explicit confirmation that
+Principle IV (Explainable AI) is deliberately non-applicable to this
+phase rather than silently skipped. Self-assessed status: "Ready for
+`/speckit-plan`" — agrees with the independent review above.
+
+### Step 5.1a — Committing the verified spec artifacts
+
+Purpose: get the verified `spec.md` and `checklists/requirements.md`
+into version control, so this milestone is preserved and pushed before
+moving on to `/speckit-plan`.
+
+**First attempt failed** — the runbook file had been shown as "ready"
+in chat but never actually saved to the WSL machine:
+```bash
+$ git add readme-runbook-phase1.md specs/
+$ git status
+fatal: pathspec 'readme-runbook-phase1.md' did not match any files
+On branch main
+Your branch is up to date with 'origin/main'.
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        .specify/feature.json
+        specs/
+```
+**Lesson**: a file being generated and shown in chat is not the same
+as it existing on disk — always confirm with `ls` before assuming a
+save happened, the same discipline already applied to Claude Code's
+own write prompts.
+
+**Fixed** by actually downloading and placing the file:
+```bash
+$ ls readme-runbook-phase1.md
+readme-runbook-phase1.md
+```
+
+**Staging revealed an unexpected extra file:**
+```bash
+$ git add readme-runbook-phase1.md specs/ .specify/feature.json
+$ git status
+Changes to be committed:
+        new file:   .specify/feature.json
+        new file:   readme-runbook-phase1.md
+        new file:   specs/001-foundation-platform-skeleton/checklists/requirements.md
+        new file:   specs/001-foundation-platform-skeleton/spec.md
+        new file:   specs/001-foundation-platform-skeleton/spec.md-unfilled-SpecKit-template
+```
+`spec.md-unfilled-SpecKit-template` was never intentionally created by
+either the runbook workflow or any `/speckit-*` command — real Spec
+Kit output filenames are `spec.md`, not that. Most likely leftover
+debug residue from the earlier write-rejection troubleshooting
+(possibly a manual backup of the empty template made while diagnosing
+that issue). **Honest gap**: its actual content was never verified
+with `cat` before removal — it was deleted directly on the assumption
+it was harmless template residue, not confirmed. Low-risk given the
+filename strongly implies template boilerplate, but worth naming as an
+assumption rather than a confirmed fact.
+
+**Removed before committing:**
+```bash
+$ git restore --staged specs/001-foundation-platform-skeleton/spec.md-unfilled-SpecKit-template
+$ rm specs/001-foundation-platform-skeleton/spec.md-unfilled-SpecKit-template
+$ git status
+Changes to be committed:
+        new file:   .specify/feature.json
+        new file:   readme-runbook-phase1.md
+        new file:   specs/001-foundation-platform-skeleton/checklists/requirements.md
+        new file:   specs/001-foundation-platform-skeleton/spec.md
+```
+
+**Committed and pushed:**
+```bash
+$ git commit -m "Phase 1: /speckit-specify complete for 001-foundation-platform-skeleton, verified spec + checklist"
+[main 8327ed4] Phase 1: /speckit-specify complete for 001-foundation-platform-skeleton, verified spec + checklist
+ 4 files changed, 779 insertions(+)
+ create mode 100644 .specify/feature.json
+ create mode 100644 readme-runbook-phase1.md
+ create mode 100644 specs/001-foundation-platform-skeleton/checklists/requirements.md
+ create mode 100644 specs/001-foundation-platform-skeleton/spec.md
+
+$ git push
+To github.com:btholath/insurance-ai-platform.git
+   831fb2a..8327ed4  main -> main
+
+$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+nothing to commit, working tree clean
+```
+
+**Result**: exactly the 4 intended files landed in commit `8327ed4`,
+pushed to `origin/main`, confirmed via a second `git status` — same
+"verify, don't trust" discipline used for the spec file writes
+themselves, applied here to the git workflow too.
 
 ### Step 5.2 — `/speckit-plan`
 
@@ -229,11 +347,52 @@ earlier in this overall effort:
 
 ## 7. Known issues / things that came up
 
-⏳ PENDING — filled in as real problems surface, same honest-disclosure
-approach as `readme-setup-conclusions.md` (e.g. the Claude Code
-billing/API-key issue, the constitution's dot-vs-hyphen syntax bug) —
-if something breaks, it gets documented here with the real fix, not
-smoothed over.
+**2026-07-30 — First `/speckit-specify` write was rejected, cause
+unclear.** The terminal log showed `"User rejected update to
+specs/001-foundation-platform-skeleton/spec.md"` — the file write did
+not happen, and the on-disk file remained the raw, unfilled Spec Kit
+template (confirmed by uploading it and finding only placeholder text
+like `[FEATURE NAME]`, generic `FR-001` examples, no mention of
+Django/RBAC/AuditLog/pytest). Whether the rejection was intentional
+(pausing to review before approving) or accidental (a stray Esc/No)
+wasn't clear from the transcript alone.
+
+**Silver lining**: the terminal log captured the diff of what *would*
+have been written before the rejection, so the drafted content itself
+could still be reviewed. It held up well against the constitution
+compliance checklist (§5.1) — explicit server-side RBAC language,
+explicit append-only audit log acceptance criteria, explicit Factory
+Boy test-data builders — even though it never got saved. Re-ran
+`/speckit-specify` with the same prompt to actually get a saved
+version; see §5.1 for the real, saved result.
+
+**Lesson for later phases**: always confirm a write actually landed
+(`cat` the file, or check `git status` for a new/modified file) rather
+than trusting the terminal transcript alone — a rejected write can
+still display convincing-looking diff content that never reaches disk.
+
+**Resolution confirmed**: re-ran the same `/speckit-specify` command,
+approved the write, then verified with a direct `cat` (not terminal
+trust) — this time the real content was genuinely on disk. See §5.1.
+
+**Second rejection, same session, different file**: immediately after
+`spec.md` succeeded, the write to
+`specs/001-foundation-platform-skeleton/checklists/requirements.md`
+(the quality checklist) was *also* rejected — same
+`"User rejected write to..."` pattern. Two rejections in one session
+on substantive content is enough to be a real pattern, not
+coincidence — possible causes: reviewing before approving each time
+(fine, just means don't assume it landed), or a stray keystroke/paste
+interaction hitting the approval menu unintentionally.
+
+**Resolved**: regenerated with a deliberate pause-before-approving
+habit (read the menu, confirm option 1, approve as a separate
+intentional action rather than a reflex keystroke) and it succeeded on
+the first attempt. Verified via direct `cat`, not terminal trust — see
+§5.1. Not fully conclusive that this *was* the root cause (only one
+clean data point), but no further rejections occurred once this habit
+was adopted, so worth keeping as standard practice for the rest of
+this project regardless.
 
 ---
 
@@ -248,3 +407,26 @@ Pro subscription — `/status` confirmed `$0.0000` cost, 20% of current
 promo active through Aug 19). Model strategy decided: Opus for
 specify/plan, Sonnet for tasks/implement, no mid-session switching.
 `/speckit-specify` command prepared and about to run.
+
+**2026-07-30 (continued)** — `/speckit-specify` completed for
+`001-foundation-platform-skeleton`, after two rejected writes (spec.md
+once, the requirements checklist once) that were resolved by verifying
+every write directly with `cat` rather than trusting the terminal
+transcript, and by deliberately pausing before approving each write
+prompt. Both `spec.md` and `checklists/requirements.md` independently
+verified on disk with real content. Spec reviewed against the
+constitution compliance checklist — passes on audit logging,
+server-side RBAC, and testing infrastructure, with technology names
+(pytest/Factory Boy) correctly deferred to the plan phase rather than
+named in the spec. Ready to proceed to `/speckit-plan`.
+
+**2026-07-30 (continued)** — Committed and pushed the verified spec
+artifacts (commit `8327ed4`). Caught two real process gaps along the
+way: (1) the runbook file itself hadn't actually been saved to the WSL
+machine despite being shown as ready in chat — always `ls` to confirm
+before trusting a "file is ready" claim; (2) an unexplained extra file
+(`spec.md-unfilled-SpecKit-template`) appeared in `git status` output,
+removed as presumed debug residue without its content ever being
+verified — a minor gap in rigor worth naming rather than glossing
+over. Final state confirmed clean via `git status` after push. See
+§5.1a for full command-by-command detail.
