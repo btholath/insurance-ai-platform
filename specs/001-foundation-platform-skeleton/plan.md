@@ -91,11 +91,28 @@ in this phase, both justified in [research.md](./research.md):
   a dependency this phase cannot test against real usage. The Postgres image
   choice does not preclude it later.
 
-Neither is a Constitution Exception (neither principle is being violated); both
-are deferrals of stack components to the phase whose spec first requires them.
+Neither is a Constitution Exception in the sense of violating a Core Principle
+(I–VI) — no principle is weakened or bypassed. However, both deviate from the
+**Technology Stack Constraints** section's binding list ("Background Jobs:
+Celery"; "PostgreSQL 16+ with the `pgvector` extension"), and the constitution's
+Governance section requires any such deviation to be recorded, not silently
+deferred. Recording it here per that requirement:
 
-**Initial gate result: PASS.** No violations. Complexity Tracking table not
-required.
+**Constitution Exceptions**
+
+| Stack item | Constitution requirement | Exception | Rationale | Reconsider when |
+|---|---|---|---|---|
+| Celery | Technology Stack Constraints: "Background Jobs: Celery" | Not installed this phase | Spec's Out of Scope section explicitly excludes background/scheduled work; no code in this phase queues anything. Redis (the broker Celery would use) is already stood up as required infrastructure, so adding Celery now would mean an idle, untested worker container. | The first module whose spec requires queued/async work (broker is already running). |
+| pgvector | Technology Stack Constraints: "PostgreSQL 16+ with the `pgvector` extension for embeddings/vector search" | Not installed this phase; `postgres:16-alpine` used instead of a pgvector-bundled image | No embedding or vector-search functionality exists in this spec (Out of Scope: "Vector search and embedding storage"). Installing the extension with nothing to test it against is untested surface area. | Module 7/8 (Prompt Library / LLM Services), whose spec first introduces embeddings — a base-image swap plus one additive `CREATE EXTENSION` migration, no rework of anything built here. |
+
+Both exceptions are deferrals of stack *components* to the phase whose spec
+first exercises them, not a rejection of the constraint — no Core Principle
+(I–VI) is diluted, reinterpreted, or bypassed by either.
+
+**Initial gate result: PASS.** No Core Principle violations. Two documented
+Technology Stack Constraint exceptions above. Complexity Tracking table not
+required (that table is for design/architectural complexity trade-offs, not
+stack-constraint exceptions, which are recorded here instead).
 
 ## Project Structure
 
