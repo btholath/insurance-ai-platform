@@ -107,6 +107,36 @@ Check real usage anytime with `/status` inside a Claude Code session,
 then look at the Usage panel — shows actual 5-hour session % and
 weekly % used, not an estimate.
 
+### Real evidence, not just theory — from this project's actual `/speckit-*` run
+
+The table above was a prediction before Phase 1 started. Here's what
+actually happened, captured directly from `/status`:
+
+| Step | Model | Real cost signal |
+|---|---|---|
+| `/speckit-plan` | Opus | Consumed **44-53% of the entire 24-hour usage window** on its own (the percentage shifted between two checks as other work added to the rolling window — both readings agree it was the dominant single consumer) |
+| `/speckit-tasks` | Sonnet | **$0.87 notional cost** for 297 lines of real output (72 tasks across 8 phases) |
+
+**One number needs a plain explanation, because it looks alarming out
+of context**: `/status` shows a "Total cost" figure (e.g. `$0.87`) even
+though we independently confirmed actual billing is `$0.0000` under
+the Pro subscription (§ earlier in this doc — confirmed via
+`Login method: Claude Pro account`, not an API key). **That "Total
+cost" is a notional/reference number** — what the session *would* have
+cost on pay-per-token API pricing, shown for comparison purposes. It
+is not a real charge. Useful as a relative measure between steps (Opus
+vs. Sonnet, one command vs. another), not as an actual bill.
+
+**Practical lesson learned mid-project**: `/status` also showed
+**75% of the current 5-hour session used** at one point, with the
+reset about an hour away. That's not something to panic about, but it
+is worth checking *before* starting another heavy `/speckit-*` command
+— starting a long-running generation at 75% used risks hitting the
+reset mid-task, which is an annoying place to be interrupted.
+**Habit**: run `/status` before, not just after, any step expected to
+be substantial (specify, plan, a large implement task), especially
+later in a work session.
+
 ---
 
 ## 5. Step-by-step: running the Phase 1 spec cycle
@@ -699,3 +729,20 @@ in `contracts/users.md` after not appearing in the two main files.
 Two operational gotchas added to §6's validation checklist (tests must
 run in-container; DB ports not published by default). Ready to
 proceed to `/speckit-tasks`.
+
+**2026-07-30 (continued)** — `/speckit-tasks` completed for
+`001-foundation-platform-skeleton` on Sonnet, new session per the
+model strategy. 72 tasks across 8 phases, clean write on the first
+attempt (no rejections, no stray files — third clean file-hygiene run
+in a row after the earlier specify-step issues). Two specific claims
+independently verified via `grep`/`sed` directly against the real
+file rather than taken on summary: the User-model-first-migration
+warning appears 5 separate times, and the US1/US4 reordering's stated
+reasoning matches the actual recommended sequence (US4 at position 3,
+before US1 at position 4). Real cost data captured for the first time
+this session: `/speckit-plan` (Opus) consumed 44-53% of the 24h usage
+window vs. `/speckit-tasks` (Sonnet) at $0.87 notional cost for 297
+lines — real evidence behind the model strategy in §4, not just
+theory. Also caught session usage at 75% mid-review, prompting the
+new "check `/status` before, not just after, heavy steps" habit now
+documented in §4.
