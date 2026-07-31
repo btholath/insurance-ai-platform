@@ -183,6 +183,99 @@ Principle IV (Explainable AI) is deliberately non-applicable to this
 phase rather than silently skipped. Self-assessed status: "Ready for
 `/speckit-plan`" — agrees with the independent review above.
 
+### Understanding what `/speckit-specify` actually did (for beginners)
+
+**What its job is, in one sentence**: it turns a plain-English feature
+description into a structured, testable **specification** — the
+*what* and *why*, deliberately not the *how* (that's `/speckit-plan`'s
+job). Its output is meant to be reviewable by a non-engineer, which is
+why it's written in "the system MUST..." language rather than code or
+architecture terms.
+
+**What it actually did, step by step, in our run:**
+
+1. **Checked for extension hooks** — looked for
+   `.specify/extensions.yml` (a way projects can customize the Spec
+   Kit workflow with pre/post steps). We don't have one, so it skipped
+   straight to the real work.
+2. **Read three files for context**: the BRD
+   (`README-Business-Requirements-Document.md`), the constitution
+   (`.specify/memory/constitution.md`), and the spec template
+   (`.specify/templates/spec-template.md`). It didn't invent
+   requirements from nothing — it grounded everything in documents
+   that already existed. That's *why* the spec cites specific
+   constitution principles by number, and references the BRD's exact
+   9-role list.
+3. **Decided on a name and number**: `foundation-platform-skeleton`,
+   prefixed `001` because `specs/` was empty (first spec ever written
+   for this project). Numbering is sequential — the *next* spec
+   written will automatically become `002-something`.
+4. **Wrote `.specify/feature.json`** — bookkeeping, not spec content.
+5. **Wrote `specs/001-foundation-platform-skeleton/spec.md`** — the
+   actual specification.
+6. **Wrote `specs/001-foundation-platform-skeleton/checklists/requirements.md`**
+   — a self-review checklist grading the spec it just wrote.
+
+**Every file and folder it created, and what each is for:**
+
+```
+.specify/
+└── feature.json                                    ← bookkeeping only
+
+specs/
+└── 001-foundation-platform-skeleton/                ← one folder per feature/phase
+    ├── spec.md                                      ← the actual specification
+    └── checklists/
+        └── requirements.md                          ← quality self-check of spec.md
+```
+
+| File | Purpose | Who reads it next |
+|---|---|---|
+| `.specify/feature.json` | Records which feature directory is "active," so `/speckit-plan` and later commands know where to write without being told again | Every subsequent `/speckit-*` command in this feature's lifecycle |
+| `specs/001-.../spec.md` | The real deliverable — requirements, user stories, success criteria, scope boundaries | `/speckit-plan` reads this to know *what* it's building a technical approach for |
+| `specs/001-.../checklists/requirements.md` | A self-graded quality gate — did the spec meet Spec Kit's own bar (testable requirements, no leaked implementation details, no unresolved clarification markers)? | You, as a human reviewer — meant for a person deciding whether to proceed, not consumed by later automation |
+
+**Why the folder is numbered `001-`**: every feature/phase gets its
+own numbered folder under `specs/`. This gives a permanent, ordered
+history — `001-foundation-platform-skeleton` today,
+`002-whatever-comes-next` later, each self-contained, never
+overwritten. Anyone can open `specs/` months later and read the entire
+sequence of requirement decisions in order, like a changelog for
+*requirements*, separate from the code's own git history.
+
+**Anatomy of `spec.md` — why each section exists**, using our actual
+spec as the reference:
+
+| Section | Job | Example from our spec |
+|---|---|---|
+| Overview | One paragraph: why does this feature exist at all | "This feature establishes the foundation on which every later module will be built" |
+| User Scenarios & Testing | Real people, real journeys, in priority order (P1 = must-have, P2 = important-but-not-blocking) | User Story 2: "Administrator Assigns Roles and the System Enforces Them" |
+| Edge Cases | The things that break naive implementations | "The System Administrator role MUST NOT be silently treated as an unrestricted bypass" |
+| Functional Requirements (FR-XXX) | Numbered, individually testable "the system MUST..." statements | FR-011: server-side enforcement, not UI-hiding |
+| Key Entities | The data concepts involved, *without* saying which database/ORM — that's a plan decision | `User`, `Role`, `AuditLog`, `HealthStatus` |
+| Success Criteria (SC-XXX) | Measurable, technology-agnostic pass/fail bars | SC-001: "reaches a fully running platform in under 30 minutes" |
+| Out of Scope | Explicitly what this spec does NOT cover, so nothing gets silently assumed either way | AI/LLM features, dashboards, production deployment — deferred to named later phases |
+| Assumptions | Judgment calls made when the request didn't specify something, stated openly rather than hidden | "Single role per user" — a real decision, written down instead of silently baked in |
+| Dependencies | What this spec relies on already existing | The constitution, the BRD, a container runtime |
+
+**The single most important thing to notice**: nowhere in `spec.md`
+does it say "Django," "PostgreSQL," or "pytest" as part of a
+*requirement* — those are locked in the *constitution* as pre-decided
+facts (referenced, not re-decided), but the requirements themselves
+are written so they'd still make sense even if the tech stack were
+swapped. That's the whole discipline of spec-driven development:
+**spec = what/why, plan = how.** `/speckit-plan` is where Django/DRF/
+pytest actually get named as *decisions*.
+
+**What this means for reviewing `/speckit-plan` next**: it doesn't
+start from scratch — it reads `spec.md` (the file just described) and
+produces the *technical* answer to every requirement in it: which
+Django apps, which DRF permission classes enforce FR-011, how
+`AuditLog` actually gets written to, where pytest+Factory Boy get set
+up. The useful review question when the plan arrives is: **"does this
+plan actually address every FR-XXX from the spec?"** — not just
+"does this look like reasonable code architecture."
+
 ### Step 5.1a — Committing the verified spec artifacts
 
 Purpose: get the verified `spec.md` and `checklists/requirements.md`
