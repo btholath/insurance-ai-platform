@@ -373,12 +373,133 @@ Model: Opus (same session as 5.1, per the no-mid-session-switching rule).
 /speckit-plan
 ```
 
-**What to check**: does the plan actually reference the ratified
-constitution's tech stack constraints (Python 3.13, Django 5.x, DRF,
-PostgreSQL 16+, Redis, Celery)? A plan that silently substitutes a
-different stack is a constitution violation, not a minor deviation.
+**Result**: ✅ VERIFIED. Created 8 files, confirmed via `git status`
+and a full independent file listing (not terminal narration alone):
 
-**Result**: ⏳ PENDING
+```
+specs/001-foundation-platform-skeleton/
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+└── contracts/
+    ├── README.md
+    ├── health.md
+    ├── users.md
+    └── audit.md
+```
+
+Ran cleanly on the first attempt this time — no rejected writes, no
+stray files (contrast with the specify step's two rejections and one
+unexplained extra file — see §7).
+
+**Deep-reviewed in full** (not just skimmed): `plan.md`, `research.md`
+(all 12 numbered decisions), and `contracts/users.md`. All three
+independently verified via `cat`, cross-checked against `spec.md`'s
+actual FR-XXX numbers rather than taken on the plan's own word.
+`data-model.md`, `contracts/health.md`, `contracts/audit.md`,
+`contracts/README.md`, and `quickstart.md` exist and are referenced
+consistently by the files that *were* deep-reviewed, but were not
+independently read line-by-line in this review pass — worth a look
+before `/speckit-implement` if anything about their content becomes
+load-bearing.
+
+**Verdict: strong. Every principle-relevant requirement traced to a
+specific technical decision, not a restatement of the spec.** Notable
+catches — the kind of thing that separates a real plan from a
+plausible-sounding one:
+
+- **`AbstractBaseUser` over `AbstractUser`**: avoids Django's built-in
+  `groups`/`user_permissions`, which would invite authorization logic
+  to drift away from the single `HasRole` mechanism FR-015 requires.
+- **`AUTH_USER_MODEL` timing**: flagged as "the single highest-cost
+  ordering mistake available in this phase" — it cannot be changed
+  after the first migration without a destructive reset. This is a
+  real, commonly-hit Django trap.
+- **404 vs. 403 by route type**: unauthenticated/unpermitted callers
+  get `404` on detail routes (a `403` would confirm the record
+  exists — FR-012) but `403` on collection routes. Applied
+  consistently, including to the sign-in endpoint.
+- **Audit write atomicity**: explicitly rejected both Django signals
+  (can't see the acting user without thread-local state; fire on
+  fixtures/migrations too) and a Celery task (would let the action
+  commit before the log exists, violating FR-022) — both are the
+  "obvious-looking but wrong" choices a less careful plan would reach
+  for.
+- **Two-layer audit immutability**: an ORM guard (fast, legible
+  errors) plus a PostgreSQL `BEFORE UPDATE OR DELETE` trigger (the
+  actual guarantee — the ORM guard alone can't stop `bulk_update` or a
+  raw SQL session).
+- **`actor_role` snapshot**: records what role the actor held *at the
+  time of the action*, not their current role — a later role change
+  would otherwise silently rewrite audit history's meaning.
+- **Celery/pgvector correctly deferred, not skipped**: both explicitly
+  traced back to `spec.md`'s own Out of Scope section, not presented
+  as a fresh independent decision — confirmed by direct quote-check
+  against the spec.
+- **WSL2-specific bind-mount warning**: named volumes chosen over bind
+  mounts specifically because of real WSL2 I/O/permission issues with
+  Postgres, not a generic Docker best-practice.
+- **FR-017 verification**: not addressed in `research.md`/`plan.md`
+  directly — confirmed present instead in `contracts/users.md`
+  ("All endpoints here are restricted to the System Administrator
+  role"), which is the *correct* location for an endpoint-level
+  permission declaration. Checked rather than assumed.
+
+**Two things flagged for the validation checklist (§6)**, both real
+operational gotchas the plan itself surfaced:
+1. Tests must run via `docker compose exec web pytest`, not host-side
+   — the host WSL Python (3.12.3) is a different interpreter than the
+   container's (3.13).
+2. Postgres/Redis ports are **not** published to the host by default
+   in the compose file — a local `psql` connection needs the commented
+   mapping uncommented first, it won't work out of the box.
+
+### Understanding what `/speckit-plan` actually did (for beginners)
+
+**What its job is, in one sentence**: it reads the spec (the *what/
+why*) and produces the *how* — concrete technical decisions, with
+alternatives considered and rejected, for every requirement that needs
+one. This is where Django, DRF, pytest, and every other named
+technology finally show up as decisions, not just referenced facts.
+
+**Every file it created, and what each is for:**
+
+| File | Purpose |
+|---|---|
+| `plan.md` | The top-level plan: technical context, the Constitution Check (run twice — once before design, once after, re-verifying nothing drifted), and the actual project folder/file structure with reasoning for every deviation from the BRD's suggested layout |
+| `research.md` | The *why* behind every non-obvious technical choice — one numbered section per decision, each with a rationale and a list of alternatives considered and rejected. This is the file worth reading most closely; it's where real engineering judgment lives |
+| `data-model.md` | The entities (`User`, `AuditLog`, `Role`, `HealthStatus`) with their actual fields/constraints — the technical version of the spec's more abstract "Key Entities" section |
+| `contracts/` (a folder, not one file) | One file per API surface — `README.md` for shared conventions, `health.md`/`users.md`/`audit.md` for each endpoint group. Each documents exact request/response shapes, status codes, and which role can do what |
+| `quickstart.md` | Setup steps from a clean clone, plus validation scenarios mapped back to the spec's user stories — this becomes the actual "how do I prove this works" reference |
+
+**Why the Constitution Check happens twice**: once *before* any design
+work (a quick sanity check that nothing about the request obviously
+conflicts with a principle), and once *after* — re-verified against
+the concrete, finished design rather than just the intent. A plan can
+pass the first check by describing good intentions and still fail the
+second if the actual detailed design drifted somewhere along the way.
+Both passed cleanly here, with Principle IV (Explainable AI) correctly
+marked not-applicable rather than silently skipped, since this phase
+has no AI surface at all.
+
+**Why `research.md` matters more than it might look like at first
+glance**: every one of its 12 decisions follows the same shape —
+*decision, rationale, alternatives considered and rejected.* That
+last part is what separates a real plan from a plausible-sounding
+one. Anyone can state a decision; stating *why the obvious alternative
+was wrong* is what proves the reasoning actually happened rather than
+being generated to sound authoritative. When reviewing your own future
+plans, the alternatives-rejected sections are the highest-value thing
+to actually read.
+
+**What this means for reviewing `/speckit-tasks` next**: tasks should
+be traceable back to *this* plan's concrete decisions, not just the
+spec's abstract requirements. A good task references *how* (e.g. "add
+the `HasRole` permission class to `apps/core/permissions.py`"), not
+just *what* (e.g. "implement RBAC") — the plan already did the work of
+turning "implement RBAC" into a specific, locatable decision; tasks
+should inherit that specificity, not flatten it back out.
 
 ### Step 5.3 — `/speckit-tasks`
 
@@ -417,6 +538,13 @@ earlier in this overall effort:
 
 - [ ] `docker compose up` brings up Postgres + Redis cleanly, both
       report healthy
+- [ ] **Tests run via `docker compose exec web pytest`, not host-side**
+      — the host WSL Python (3.12.3) is a different interpreter than
+      the container's (3.13); a host-side pytest run would test the
+      wrong runtime entirely and silently produce misleading results
+- [ ] **A local `psql` connection requires uncommenting the port
+      mapping** in `docker-compose.yml` first — Postgres/Redis ports
+      are deliberately not published to the host by default
 - [ ] Django migrations run without error against the real Postgres
       container (not SQLite — confirms the actual configured stack
       works, not a fallback)
@@ -523,3 +651,17 @@ removed as presumed debug residue without its content ever being
 verified — a minor gap in rigor worth naming rather than glossing
 over. Final state confirmed clean via `git status` after push. See
 §5.1a for full command-by-command detail.
+
+**2026-07-30 (continued)** — `/speckit-plan` completed for
+`001-foundation-platform-skeleton`, clean run with no rejected writes
+(contrast with the specify step). 8 files created; `plan.md`,
+`research.md` (all 12 decisions), and `contracts/users.md`
+deep-reviewed and verified against `spec.md`'s actual FR-XXX numbers.
+Verdict: strong — Constitution Check passed twice (pre- and
+post-design), every principle-relevant requirement traced to a
+specific technical decision with rejected alternatives shown, not
+just restated. FR-017 specifically chased down and confirmed present
+in `contracts/users.md` after not appearing in the two main files.
+Two operational gotchas added to §6's validation checklist (tests must
+run in-container; DB ports not published by default). Ready to
+proceed to `/speckit-tasks`.
