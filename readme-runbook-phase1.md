@@ -463,6 +463,32 @@ alternatives considered and rejected, for every requirement that needs
 one. This is where Django, DRF, pytest, and every other named
 technology finally show up as decisions, not just referenced facts.
 
+**What it actually did, step by step, in our run:**
+
+1. Checked current repo state and the checklist artifacts — confirmed
+   the spec and quality checklist from the previous step actually
+   existed before building anything on top of them.
+2. Caught a real environment mismatch: host WSL has Python 3.12.3,
+   the constitution mandates 3.13. Reasoned through it correctly —
+   since the app runs in a container, the container's interpreter is
+   what matters, not the host's. Resolved, not ignored or silently
+   downgraded.
+3. Read the BRD's suggested project structure section — grounded the
+   folder layout in an existing document, same pattern `/speckit-specify`
+   used with the BRD and constitution.
+4. Wrote `plan.md` — technical context, the pre-design Constitution
+   Check, and the project structure with reasoning for every
+   deviation from the BRD's suggested layout.
+5. Generated the supporting design files — `research.md` (12 numbered
+   decisions), `data-model.md`, `contracts/` (4 files), `quickstart.md`.
+6. Ran a second Constitution Check, this time against the *finished*
+   concrete design rather than just the initial intent, recorded
+   directly in `plan.md`.
+7. Reported "Planning complete" with a summary table and three things
+   flagged for review before proceeding — all three independently
+   verified afterward rather than taken on faith (see §5.2's Result
+   above).
+
 **Every file it created, and what each is for:**
 
 | File | Purpose |
@@ -473,15 +499,23 @@ technology finally show up as decisions, not just referenced facts.
 | `contracts/` (a folder, not one file) | One file per API surface — `README.md` for shared conventions, `health.md`/`users.md`/`audit.md` for each endpoint group. Each documents exact request/response shapes, status codes, and which role can do what |
 | `quickstart.md` | Setup steps from a clean clone, plus validation scenarios mapped back to the spec's user stories — this becomes the actual "how do I prove this works" reference |
 
-**Why the Constitution Check happens twice**: once *before* any design
-work (a quick sanity check that nothing about the request obviously
-conflicts with a principle), and once *after* — re-verified against
-the concrete, finished design rather than just the intent. A plan can
-pass the first check by describing good intentions and still fail the
-second if the actual detailed design drifted somewhere along the way.
-Both passed cleanly here, with Principle IV (Explainable AI) correctly
-marked not-applicable rather than silently skipped, since this phase
-has no AI surface at all.
+**Anatomy of `plan.md` — why each section exists:**
+
+| Section | Job | What it actually contained in ours |
+|---|---|---|
+| Summary | One paragraph, plain-language technical approach — fast orientation before the details | "Stand up the Django 5.x + PostgreSQL 16 + Redis local environment... make server-side RBAC and append-only audit logging structural from day one" |
+| Technical Context | Pins down every concrete technical fact needed before evaluating anything else — language version, dependencies, storage, testing tools, target platform, performance goals, constraints, scale | The Python 3.13-in-container reasoning lives here, spelled out explicitly, not buried |
+| Constitution Check (pre-design gate) | The actual gate — one row per principle: does it apply, how is it satisfied, pass/fail/N/A. A plan that fails here is supposed to stop before detailed design is wasted effort | All 6 principles evaluated; Principle IV correctly marked N/A (no AI surface this phase) rather than silently skipped |
+| Project Structure | Two parts: the documentation layout (this feature's `specs/` folder contents) and the real source-code layout (`config/`, `apps/`, `docker/`, etc.) — plus a **Structure Decision** paragraph explaining every deviation from the BRD's suggested layout, with reasoning | The actual blueprint `/speckit-implement` follows — explains *why* `frontend/` isn't created, why `apps/core` and `apps/audit` exist beyond the BRD's original app list |
+| Complexity Tracking | A table for recording any place the plan needs to break a constitution principle, forcing explicit written justification rather than silently doing it | "Not required — Constitution Check passed with no violations" — empty because nothing needed to violate anything |
+| Post-Design Constitution Re-Check | Re-verifies every principle, but this time against the *finished* concrete design (the actual data model, actual contracts) rather than just the initial intent | Catches drift between "we intend to do audit logging right" (first check) and "here's the exact field-by-field design, does it actually satisfy Principle II" (second check) — both passed here |
+
+**Why the two-check structure matters**: a plan can pass the first
+Constitution Check by describing good intentions and still fail the
+second one if the detailed design drifted somewhere along the way.
+Ours passed both — meaning the final concrete design (immutability
+triggers, the `HasRole` class, the 404-vs-403 split) actually delivers
+what the early intent promised, not just gestures at it.
 
 **Why `research.md` matters more than it might look like at first
 glance**: every one of its 12 decisions follows the same shape —
