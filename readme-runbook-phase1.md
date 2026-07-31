@@ -580,7 +580,112 @@ still a paragraph of architecture description, that's a sign
 `/speckit-plan` wasn't specific enough — worth revisiting before
 proceeding to implementation.
 
-**Result**: ⏳ PENDING
+**Result**: ✅ VERIFIED. Created 1 file — `tasks.md` — 72 tasks
+(T001-T072) across 8 phases. Clean write on the first attempt, no
+rejections, no stray files (confirmed via `git status` showing exactly
+one untracked file). 297 lines of real content, confirmed via full
+`cat` (no garbling, unlike one earlier read attempt during the plan
+step). Two specific claims independently verified via `grep`/`sed`
+against the real file rather than taken on the completion report's
+word: the User-model-first-migration warning appears 5 separate times
+across the document, and the US1/US4 execution reordering's stated
+reasoning matches the actual recommended sequence. Real cost data
+captured for this step: $0.87 notional cost (Sonnet) for the full
+297-line output — see §4's "Real evidence" subsection for the
+comparison against `/speckit-plan`'s Opus cost.
+
+### Understanding what `/speckit-tasks` actually did (for beginners)
+
+**What its job is, in one sentence**: it reads the plan (the *how*)
+and breaks it into concrete, ordered, independently-completable
+implementation steps — small enough to actually execute and verify
+one at a time, organized by user story so each story can be built and
+tested independently of the others.
+
+**What it actually did, step by step, in our run:**
+
+1. Checked for extension hooks (none — same as the previous two
+   steps).
+2. Loaded the design documents in parallel — `plan.md`, `research.md`,
+   `data-model.md`, `quickstart.md`, and the spec, plus a shell
+   command (likely listing the `contracts/` folder).
+3. Loaded the `contracts/` files individually and the constitution,
+   and checked Spec Kit's own tasks template.
+4. Noted explicitly that the spec requires tests (FR-029 through
+   FR-034) and that constitution Principle V mandates tests be written
+   *before* the code they cover — stated this as a rule the generated
+   tasks would have to follow, before generating anything.
+5. Made a real structural decision before writing: recognized that
+   User Story 1 (P1, "environment runs") depends on outputs that
+   belong to Stories 2 and 4 (the User model, the health endpoint) —
+   so it restructured the execution order into Setup → Foundational
+   (everything that blocks every story) → Stories, rather than
+   mechanically numbering phases in spec-priority order and letting
+   the dependency problem surface later.
+6. Wrote `tasks.md`.
+7. Checked for post-execution hooks (none).
+8. Produced a completion report: a phase/task-count breakdown table,
+   parallel-execution opportunities, each story's independent test
+   criteria (copied forward from the spec, not reinvented), a
+   suggested MVP scope, and an explicit format-validation step (grep
+   confirming every task followed the checkbox convention).
+
+**Every file/folder it created:**
+
+Just one file this time — no new folder, unlike the plan step:
+```
+specs/001-foundation-platform-skeleton/
+└── tasks.md
+```
+
+| File | Purpose |
+|---|---|
+| `tasks.md` | The full implementation checklist — every task individually completable, ordered so dependencies are respected, grouped by user story so each story is independently buildable and testable |
+
+**Anatomy of `tasks.md` — why each section exists:**
+
+| Section | Job | What it actually contained in ours |
+|---|---|---|
+| Frontmatter + Input/Prerequisites | Confirms every design document this file depends on actually exists before generating tasks from them | Listed `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md` — "all present" |
+| **Tests** policy statement | States up front whether tests are included and why — this is a project-level policy decision, not left implicit per-task | Explicitly cites FR-029 through FR-034 and constitution Principle V; states tests must be written and fail *before* their implementation task |
+| Organization + Format | Explains the grouping principle (by user story) and the `[ID] [P?] [Story] Description` convention so every task is scannable at a glance | `[P]` = can run in parallel (different files, no dependency); `[Story]` = which user story this task belongs to |
+| Path Conventions | Ties every task's file paths back to `plan.md`'s actual project structure, so tasks and plan can't silently drift apart | `config/`, `apps/<name>/`, `tests/`, `docker/`, `scripts/` — the exact same layout `plan.md` defined |
+| Phase sections (Setup → Foundational → US1-US5 → Polish) | Each phase states its Purpose, lists Tests-then-Implementation tasks in that order, and ends with a Checkpoint describing what's provably true once the phase is done | The `⚠️ CRITICAL` callout in Foundational's header is a direct example — the phase description itself carries the User-model-ordering warning, not just a footnote |
+| Dependencies & Execution Order | The real sequencing logic — which phases block which, and *why* the recommended order sometimes differs from spec-priority order | The US1/US4 reordering lives here, with its reasoning stated explicitly, not just implied by the task numbers |
+| Parallel Example | A concrete, copy-pasteable illustration of what "these tasks can run together" actually looks like in practice | A 4-task example from User Story 2's test-writing phase |
+| Implementation Strategy | Three framings of the same task list for different situations — MVP-first for a single developer, incremental delivery as a checklist, and a parallel-team split | The parallel-team version even assigns specific stories to hypothetical "Developer A/B/C" — useful if this project ever isn't solo |
+| Notes | Cross-cutting reminders that don't belong in any one phase — repeats the User-model warning a final time, states the audit-immutability-tested-at-two-layers requirement, and recommends committing after each task or logical group | Reinforcement, not new information — the same critical facts stated once in Foundational's header show up again here for anyone skimming straight to the bottom |
+
+**Why the "Tests" policy statement matters as its own section**: a
+task list could easily bury "oh, and write tests too" as an implicit
+expectation on every implementation task. Making it an explicit,
+separate policy statement up front — citing the specific FRs and the
+specific constitution principle — means nobody generating or reviewing
+individual tasks later has to guess whether a given task needs a test
+written first. It's decided once, for the whole document, not
+re-litigated per task.
+
+**Why the Dependencies & Execution Order section is the most
+important one to actually read**: the phase *numbers* (Phase 3 = US1,
+Phase 6 = US4) reflect spec priority, but the *recommended sequence*
+correctly overrides that when priority and dependency conflict — this
+is exactly the same "real reasoning, not mechanical pattern-matching"
+signal we looked for in the plan step's alternatives-rejected
+sections. A tasks.md that just numbered phases 1-8 and told you to do
+them in that literal order would have handed you an unbuildable
+sequence (Phase 3/US1's own checkpoint needs something Phase 6/US4
+hasn't built yet).
+
+**What happens next, now that you understand this**: `/speckit-analyze`
+(already invoked, pending review) is a cross-artifact consistency
+check — it reads spec, plan, and tasks together and looks for drift
+between them, rather than reviewing any one document in isolation.
+Once that's reviewed, `/speckit-implement` is where actual code
+finally gets written. The review question shifts one more time: does
+the generated code match *this* task list's specific file paths and
+decisions — not just "does it compile" or "does it seem reasonable" —
+and do tests genuinely get written and shown failing before their
+implementation task, per the policy this document just established.
 
 ### Step 5.4 — `/speckit-implement`
 
