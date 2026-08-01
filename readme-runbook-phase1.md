@@ -695,7 +695,222 @@ Model: Sonnet (same session as 5.3).
 /speckit-implement
 ```
 
-**Result**: ⏳ PENDING
+**Result**: ✅ FOUNDATIONAL CHECKPOINT COMPLETE (Option B). Scoped
+explicitly to Phase 1 (Setup) + Phase 2 (Foundational) only, per the
+Option B checkpoint decision — `tasks.md` shows T001-T030 as `[X]`.
+Both highest-stakes files (`permissions.py`, `audit/models.py`)
+independently reviewed and verified with zero gaps — see the full
+verification trail below. **User Stories (Phase 3+) intentionally not
+started** — this is the review checkpoint itself, not a stopping
+point due to a problem. First commit of the actual application code
+still pending as of this entry — see §5.1a-style commit, to be done
+at the start of the next session.
+
+**Self-disclosed deviations from the literal task text** (Claude Code
+reported these unprompted before asking for review — a good sign,
+worth noting explicitly):
+
+1. `apps/{accounts,audit,health,customers,policies,claims}/urls.py`
+   are empty stubs (`urlpatterns = []`), not the real routes — those
+   are explicitly scoped to out-of-run tasks (T044/T057/T063/T046).
+   Pre-approved via the `config/urls.py` forward-reference discussion
+   (see §7).
+2. `docker-compose.yml` and the Docker image (nominally T029, part of
+   T003) were built earlier than their task order, because generating
+   T018's migration correctly required a real Django+Postgres
+   environment, which only exists inside the container. Pre-approved.
+3. `/health/` currently returns a Django `303` redirect to a
+   locale-prefixed URL (`LocaleMiddleware`'s default behavior) rather
+   than a real response — expected, since the health app is still a
+   stub; will be superseded when US4 builds the real view (T062).
+   **Independently verified** via `curl -sI` — confirmed the redirect
+   is real and matches this explanation, not a guess. One oddity
+   noted in the same response: a `Server: Splunkd` header, unusual for
+   a Django dev response — flagged as worth watching for if odd
+   responses recur, not chased further since the redirect itself is
+   already fully explained.
+
+**Independent verification performed** (not just accepting the
+self-report):
+
+- `apps/accounts/models.py` reviewed line-by-line against `plan.md`/
+  `data-model.md`: `AbstractBaseUser` + `PermissionsMixin` (not
+  `AbstractUser`, avoiding the groups/permissions drift risk from
+  `research.md` §2), all 9 roles present and correctly named, `role`
+  field has no `null=True` (the actual DB-level enforcement of
+  FR-014's deny-by-default), `CheckConstraint` named `user_role_valid`
+  exactly as `tasks.md` T016 specified, email lowercased on save.
+- `apps/accounts/migrations/0001_initial.py` reviewed: `initial =
+  True`, depends only on `auth` — confirmed genuinely first.
+- **Migration confirmed actually applied**, not just generated —
+  via direct `psql -c "\d accounts_user"` against the live container
+  database (not trusting the migration file alone): every column,
+  the unique+indexed `email`, the 9-value `CheckConstraint`, all
+  matched exactly.
+- **Discovered mid-verification**: `db`/`redis` had been stopped
+  between turns (cause unclear — possibly incidental to the audit-row
+  discussion). Restarted, re-verified healthy, re-ran the schema check
+  against the *actual current* database state rather than assuming
+  the earlier state still held.
+- **Volume check** (`docker volume ls`) confirmed
+  `insurance-ai-platform_postgres_data` survived the restart — this
+  is genuinely the same database as before, not a fresh one, meaning
+  Claude Code's disclosed "one stuck AuditLog row from a trigger test"
+  is real and still present. Confirmed directly:
+  ```
+  SELECT * FROM audit_auditlog;
+  → id=1, action=user.created, outcome=succeeded,
+    actor_identifier=test@example.com,
+    actor_role=system_administrator
+  ```
+  **Decision**: keep it rather than reset (`docker compose down -v`).
+  Rationale — it's informal, free evidence the append-only trigger
+  genuinely fired during real manual testing, before the formal
+  pytest suite (T048/T049) exists to prove it properly. Resetting now
+  would only mean redoing already-verified-correct migration work for
+  no benefit.
+- **Bonus discovery, not yet fully confirmed**: `\d accounts_user`'s
+  output showed the `audit_auditlog` table already has a live FK to
+  `accounts_user` — meaning the audit app (T021-T025) has *also*
+  already been generated/migrated, ahead of its own independent
+  review. `apps/audit/models.py` has **not** yet been reviewed with
+  the same scrutiny as `accounts/models.py` — flagged as the next
+  thing to check, not yet done as of this entry.
+
+**Outstanding as of this entry**: `apps/audit/models.py` review, the
+remainder of Foundational (T021-T030 — audit app close-out, health
+checks, test fixtures, final Docker Compose verification), and the
+first real commit of application code (currently nothing staged).
+
+**2026-08-01 (continued) — Foundational declared complete by Claude
+Code; independently re-verified, with one real correction along the
+way.** Claude Code reported T007-T030 fully "complete, tested, and
+matches tasks.md and data-model.md," with T029/T030 having been
+pulled forward alongside T018 (as previously disclosed) — meaning the
+Option B checkpoint had effectively already arrived.
+
+**A wrong explanation caught and corrected before it became false
+record**: `curl -sI http://localhost:8000/health/` returned `HTTP/1.1
+303 See Other` with a `Location:` header pointing at a locale-prefixed
+URL. Initially attributed to Django's `LocaleMiddleware`. This was
+**wrong**, caught by actually reading `config/urls.py` before letting
+the explanation stand: there is no `i18n_patterns()` anywhere in the
+file, so Django itself cannot be the source of that redirect — a plain
+`path()` route never triggers locale redirection. Cross-checking
+against the container's own logs (`Not Found: /health/`, correctly
+timestamped to match automated healthcheck polling) confirmed the
+*real* Django behavior is a plain `404` — fully expected, since
+`apps/health/urls.py` is still the disclosed empty stub. The `303` +
+an unusual `Server: Splunkd` header (gunicorn would say `Server:
+gunicorn`, never Splunkd) point to host-network interception — a
+corporate proxy/security agent between the terminal and the container,
+unrelated to anything built here. Same fingerprint as an identical
+false lead earlier in this overall project (a different repo,
+same root cause). **Lesson**: don't accept a first plausible
+explanation for an HTTP-layer anomaly without actually reading the
+relevant source file first — this one would have gone into project
+memory as fact if it hadn't been checked against `config/urls.py`
+directly.
+
+**`apps/core/permissions.py` (`HasRole`) reviewed in full — passes
+cleanly, no gaps found.** This is the single highest-stakes file in
+Foundational, since every RBAC requirement (FR-011, FR-012, FR-014,
+FR-015, FR-016) and constitution Principle III route through it.
+Verified line-by-line:
+- No `is_superuser` reference anywhere — only `user.role` is ever
+  checked, correctly preventing the "administrator = unrestricted
+  bypass" anti-pattern.
+- Deny-by-default implemented as a **positive** membership check
+  (`role in allowed`), not a negative exclusion check — a null/blank/
+  garbage role simply isn't `in` anything, no special-casing needed
+  or forgettable.
+- `has_object_permission` (detail routes) raises `NotFound()`
+  directly; `has_permission` (collection routes) returns `False`,
+  letting DRF's normal machinery produce a `403` — the exact 404-vs-403
+  split FR-012 requires, implemented precisely, not approximated.
+- No caching — `request.user.role` read fresh every call, correctly
+  satisfying FR-016's immediate-effect requirement.
+- Docstring cites the actual FR numbers and `research.md` section
+  per design decision — genuinely traceable, not just restating the
+  code in prose.
+
+**A genuine "tested" vs. "verified" precision gap, caught and
+corrected.** Ran the real pytest suite for the first time this
+session:
+```bash
+docker compose exec web pytest apps/core/tests/ apps/accounts/tests/ apps/audit/tests/ apps/health/tests/ -v
+```
+Result: **`collected 0 items`**. Confirmed via
+`find apps -path '*/tests/*.py' -not -name '__init__.py'` returning
+completely empty — every `tests/` directory contains only an empty
+`__init__.py`, no real test files exist anywhere yet. This directly
+contradicts "tested" in Claude Code's completion summary. Coverage
+report from the same run corroborates it: `apps/core/permissions.py`
+shows **0% coverage** (17 statements, 17 missed) despite passing full
+manual review — proof the file has never actually been exercised by
+an automated test, only read and reasoned about.
+
+**This is not a functional problem** — per `tasks.md`'s own phase
+design, the paired test tasks for this code (T036-T041 for RBAC,
+T048-T054 for audit, T058-T061 for health) are correctly scoped to
+their respective User Story phases, not Foundational, so their absence
+right now is expected, not a bug. The actual issue is purely one of
+**precise language**: "tested" implies an automated suite ran and
+passed; what actually happened is "implementation complete, manually
+spot-checked via direct `psql`/`curl` inspection." Flagged directly to
+Claude Code for confirmation rather than silently correcting the
+runbook's own language and moving on.
+
+**One unrelated, low-priority finding surfaced for free by the pytest
+run**: `apps/accounts/models.py:35` — `RemovedInDjango60Warning:
+CheckConstraint.check is deprecated in favor of .condition`. Harmless
+under Django 5.1, worth fixing before any future Django 6.0 upgrade.
+Not blocking, logged here so it isn't forgotten.
+
+**Claude Code's "by design, not an oversight" defense — independently
+checked, holds up.** In response to the tested-vs-verified question
+above, it explained that every test file for this code (`test_models.py`,
+`test_permissions.py`, `test_immutability_db.py`, `test_checks.py`,
+etc.) is task-scoped to US2/US3/US4, not Foundational, and that
+`tests/conftest.py`'s fixtures (`api_client`, `user_in_role`) have no
+consumers yet since no test file imports them. Both claims verified
+independently rather than accepted on tone:
+```bash
+grep -n "test_permissions\|test_models\|test_immutability_db\|test_checks" specs/001-foundation-platform-skeleton/tasks.md
+grep -rn "api_client\|user_in_role" apps/ tests/ --include="*.py" | grep -v conftest.py
+```
+Every test filename genuinely maps to a `[US2]`/`[US3]`/`[US4]` label
+in the real file, none appear under Foundational; the fixture-consumer
+search came back completely empty. The explanation was accurate, not
+just confidently phrased.
+
+**`apps/audit/models.py` reviewed in full against `research.md` §5-§7
+and `data-model.md` — this closes the last open item from this
+section, and audit immutability is now confirmed across all four
+layers it's supposed to have, not just asserted:**
+
+| Layer | Mechanism | How verified |
+|---|---|---|
+| Model `save()` | Raises if `self.pk is not None` | Read directly in `models.py` |
+| Model `delete()` | Raises unconditionally | Read directly in `models.py` |
+| QuerySet `.update()`/`.delete()` | Custom `AuditLogQuerySet` overrides both to raise | Read directly in `models.py` — this is a genuine fourth layer beyond what the plan review originally described; without it, `AuditLog.objects.filter(...).update(...)` would silently bypass the model-level guards entirely, since queryset-level bulk operations never call individual `save()`/`delete()` |
+| Database trigger | `BEFORE DELETE OR UPDATE` on `audit_auditlog` | **Confirmed live** via `psql -c "\d audit_auditlog"` against the real running database — listed directly under the table's `Triggers:` section as `audit_log_immutable BEFORE DELETE OR UPDATE ... EXECUTE FUNCTION audit_log_immutable()`, not just present in the migration file |
+
+Also confirmed: `actor` uses `SET_NULL` with a separate
+`actor_identifier`/`actor_role` snapshot (FR-021), `before`/`after`/
+`context` are generic `JSONField`s with `target_type`/`target_id`
+rather than app-specific columns (FR-023's reusability requirement),
+and the composite index on `(target_type, target_id, timestamp)`
+matches the chronological-retrieval query pattern `plan.md` specified.
+**Zero gaps found.**
+
+**Foundational is now genuinely, fully verified complete** — both of
+its highest-stakes files (`apps/core/permissions.py` and
+`apps/audit/models.py`) independently reviewed line-by-line against
+the actual spec/plan/data-model, with the audit trigger specifically
+confirmed at the live database level, not taken on the migration
+file's word alone. Nothing committed to git yet as of this entry —
+see the next session's first action.
 
 ---
 
@@ -898,3 +1113,61 @@ Redis confirmed healthy with genuinely random (non-placeholder)
 credentials via a direct `psql` connection test before proceeding to
 T018 (the accounts migration). Migration generation itself still in
 progress as of this entry.
+
+**2026-08-01 (continued)** — `apps/accounts/models.py` and its
+migration independently verified, not just accepted from Claude
+Code's own summary: reviewed the model source line-by-line against
+`plan.md`/`data-model.md`, then confirmed the applied schema directly
+via `psql -c "\d accounts_user"` against the live container database.
+Everything matched exactly — all 9 roles, the `user_role_valid` check
+constraint, non-nullable `role` (the real DB-level enforcement of
+deny-by-default), unique+indexed `email`. Along the way: `db`/`redis`
+were found stopped between turns, restarted and re-verified rather
+than assuming prior state still held; confirmed via `docker volume ls`
+that the Postgres volume survived the restart, meaning a
+previously-disclosed stuck `AuditLog` test row (id=1, from Claude
+Code's own trigger testing) is genuinely still present — decided to
+keep it as informal proof-of-immutability rather than reset. Also
+discovered the audit app's table already exists in the live schema
+(a live FK from `audit_auditlog` to `accounts_user`), meaning
+`apps/audit/models.py` has been generated ahead of its own review —
+flagged as the next thing to check. Nothing committed yet; Foundational
+still has T021-T030 remaining.
+
+**2026-08-01 (continued)** — Foundational (T007-T030) declared
+complete by Claude Code. Independent re-verification found the
+implementation genuinely solid — `apps/core/permissions.py`'s
+`HasRole` reviewed line-by-line with zero gaps (no superuser bypass,
+correct deny-by-default, correct 404-vs-403 split, no role caching) —
+but caught two real precision issues along the way. First: an
+earlier-recorded explanation for a `/health/` HTTP anomaly
+(attributed to Django's `LocaleMiddleware`) was wrong, caught by
+actually reading `config/urls.py` before letting it stand — the real
+`404` is expected/correct, and the misleading `303` traces to
+host-network interception (matching an identical false lead from
+earlier in this project), not Django. Second: Claude Code's own
+"complete, tested" summary was overstated — running the real pytest
+suite returned `collected 0 items`, confirmed via a direct file search
+that no test files exist yet anywhere, only empty `__init__.py`
+stubs. Not a functional problem (the paired test tasks are correctly
+scoped to later User Story phases per `tasks.md`'s own design), but
+"tested" should have said "manually verified" — flagged directly to
+Claude Code for confirmation rather than silently corrected. Also
+logged a low-priority Django 6.0 deprecation warning surfaced by the
+pytest run. Nothing committed yet.
+
+**2026-08-01 (continued, session close)** — Claude Code's
+"tested-vs-verified was by design" explanation independently checked
+against `tasks.md` and the actual test-consumer search — confirmed
+accurate. `apps/audit/models.py` reviewed to the same standard as
+`permissions.py`: four-layer immutability confirmed (model `save()`,
+model `delete()`, custom queryset override, and — critically —
+the Postgres `BEFORE DELETE OR UPDATE` trigger confirmed **live**
+against the running database via `psql`, not just present in a
+migration file). Zero gaps found in either file. Foundational
+(T001-T030) is now genuinely, independently verified complete — both
+of its highest-risk components checked line-by-line against spec/plan/
+data-model, not accepted on Claude Code's summary alone. Session ending
+with the first commit of actual application code still pending —
+first action for the next session. Started `/speckit-implement`
+scoped correctly to US2 (T036-T041) as the next step once resumed.
