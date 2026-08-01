@@ -784,6 +784,26 @@ clean data point), but no further rejections occurred once this habit
 was adopted, so worth keeping as standard practice for the rest of
 this project regardless.
 
+**⏩ Forward-note for T033 (User Story 1's setup documentation, not yet
+written)**: while manually working through Foundational's database
+setup, discovered a real gotcha that T033's eventual `README.md`/setup
+docs MUST warn about: **`cp .env.example .env` overwrites an existing
+`.env` unconditionally**, with no prompt and no backup. This bit us
+directly — `db`/`redis` had already started once using one set of
+credentials, then `.env` got blindly overwritten with placeholder
+values from `.env.example`, creating a real mismatch between what
+Postgres's volume was actually initialized with and what `.env`
+claimed. Required a full `docker compose down -v` + fresh `.env` +
+fresh `up` to resolve cleanly. **When T033 is written**, it must
+explicitly say: check whether `.env` already exists before copying the
+example over it, and if the database volume already exists, changing
+`.env`'s credentials afterward requires wiping the volume (`down -v`)
+to actually take effect — Postgres does not re-read `.env` and update
+an already-initialized user/password on restart alone. Also worth a
+one-line placeholder-sweep habit in the docs: `grep -iE
+"changeme|placeholder|your-|example" .env` should return nothing
+before trusting the file.
+
 ---
 
 ## 8. Progress log
@@ -851,3 +871,30 @@ lines — real evidence behind the model strategy in §4, not just
 theory. Also caught session usage at 75% mid-review, prompting the
 new "check `/status` before, not just after, heavy steps" habit now
 documented in §4.
+
+**2026-07-31 (continued)** — `/speckit-analyze` reviewed: no CRITICAL
+findings, 2 HIGH (C1: missing formal Constitution Exceptions
+cross-reference for the Celery/pgvector deferrals; F1: missing test
+for the audit-history empty-result case), 2 MEDIUM (F2, F3), 2 LOW
+(D1, A1). Applied fixes for C1 and F1 via Claude Code's own suggested
+remediation, verified with `git diff` before committing — the fix also
+incidentally closed F2 (T053b) as a bonus, correctly noticed rather
+than silently accepted. F3/D1/A1 left open as genuinely non-blocking.
+Committed as `0002c15`.
+
+**2026-07-31 (continued)** — `/speckit-implement` started, scoped
+explicitly to Phase 1+2 only (Setup + Foundational, stopping before
+any User Story), per the Option B checkpoint decision. Caught a real
+gap in `tasks.md` itself mid-implementation: `config/urls.py` (T012,
+Foundational) mounts each app's `urls.py`, but those files are only
+*created* by later, out-of-scope User Story tasks (T044/T057/T063/
+T046) — Django would fail to boot on the missing imports. Resolved by
+stubbing minimal per-app `urls.py` files now (Claude Code's own
+recommended option), each intended to be populated by its real task
+later. Also hit and resolved a real `.env` handling mistake during
+manual database setup — see the forward-note in §7 for the full
+gotcha, now flagged for T033's future documentation. Database and
+Redis confirmed healthy with genuinely random (non-placeholder)
+credentials via a direct `psql` connection test before proceeding to
+T018 (the accounts migration). Migration generation itself still in
+progress as of this entry.
