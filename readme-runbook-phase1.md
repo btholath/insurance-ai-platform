@@ -991,6 +991,92 @@ implementation) on the strength of this verification - the false-
 positive-pass finding is a real thing to re-check later, not a reason
 to block moving forward now.
 
+### US2 completion (T042-T047) — a real bug found in the highest-stakes file, fixed and proven
+
+T042-T047 implemented `apps/accounts/serializers.py`,
+`apps/accounts/views.py`, `apps/accounts/urls.py`,
+`apps/accounts/auth_views.py` (login/logout), and the
+`customers`/`policies`/`claims` placeholder RBAC endpoints.
+
+**The follow-up flagged at the end of the T036-T041 entry above came
+true, in exactly the way anticipated.** Once real views existed and
+DRF's actual request pipeline ran (rather than tests calling
+permission methods directly), a genuine bug surfaced in
+`apps/core/permissions.py` — the same file that was independently
+line-by-line reviewed with zero gaps found, twice, in earlier
+sessions. This is not a failure of those reviews; it's a real
+methodological limit worth internalizing: **permission-class logic
+that depends on framework dispatch order cannot be fully verified by
+reading the source or by unit tests that call its methods directly —
+only by exercising it through the real request pipeline.**
+
+**The bug**: DRF calls `has_permission()` in `APIView.initial()`,
+*before* the handler runs, for every route type. A `False` there
+short-circuits straight to 403/401 without ever reaching
+`get_object()` → `has_object_permission()`. The original
+implementation's `has_permission()` did the full role check
+unconditionally — meaning on detail routes, a wrong-role caller was
+blocked one layer too early, and `has_object_permission()`'s
+FR-012-mandated 404 logic was structurally unreachable. Caught via a
+live check against the running container, not a unit test.
+
+**The fix**: `has_permission()` now defers entirely to
+`has_object_permission()` on detail routes (detected via a lookup
+kwarg like `pk` being present in `view.kwargs`), while remaining the
+sole, authoritative check on collection routes. Verified by:
+- Reading the full corrected file directly (not just the diff) —
+  confirmed nothing else changed alongside the fix
+- Tracing the fix's logic against DRF's actual dispatch order by
+  hand, including the edge case where the target object doesn't exist
+  at all (still correctly 404s, via `get_object_or_404`, before
+  `has_object_permission` even runs)
+- 3 new regression tests specifically targeting the fixed dispatch
+  path (`test_has_permission_defers_to_object_check_on_detail_route_
+  for_unauthenticated`, `..._for_wrong_role`,
+  `test_has_permission_still_denies_on_collection_route_with_view_
+  present`)
+- Most importantly: the 9 tests flagged in the previous entry as
+  "passing for the wrong reason" (coincidental URL-not-found 404s)
+  are now genuinely passing *with the real permission code exercising
+  them* — `test_system_administrator_allowed_200` passing alongside
+  all 8 `refused_404` variants in the same test class is the actual
+  proof the fix works end-to-end, not just in isolation
+
+**Second real bug, self-caught and fixed**: `PageNumberPagination`
+without an explicit `page_size` silently returns a bare list instead
+of the contract's `{"count", "next", "previous", "results"}` shape.
+Caught via a live check against the running container, not pytest.
+Fixed with a dedicated `UserListPagination(page_size=50)` class,
+confirmed live afterward, and now has a dedicated regression test
+(`TestGetUsersListShape::test_response_has_count_and_results_per_
+contract`).
+
+**Two test-authorship bugs, self-disclosed rather than hidden**: a
+fixture-sharing collision made two supposedly-separate API clients
+the same underlying object; and `force_authenticate()` pins a stale
+Python object rather than re-reading the database, meaning the
+FR-016 "no re-login needed" test needed to go through a real session
+login (`/api/auth/login/`) to actually prove what it claims, not just
+call `force_authenticate` twice.
+
+**Final verified state for T036-T047**, direct pytest execution:
+```
+96 passed, 0 failed, 99 warnings in 4.45s
+```
+Coverage: `apps/core/permissions.py` 100%, `apps/accounts/views.py`
+100%, `apps/accounts/serializers.py` 100%, `apps/accounts/
+auth_views.py` 100%, `apps/audit/services.py` 100% (incidental gain
+from the login/logout audit-trail work). Overall project coverage:
+**84%** (417 statements, 66 missed), up from 71% at the end of
+T036-T041.
+
+Test coverage added beyond the original T036-T047 scope, since these
+were genuinely at 0% otherwise: auth login/logout
+(`test_auth_views.py`, 6 tests) and the `user.deactivated`/
+`user.updated` audit branches.
+
+`tasks.md` now shows T036-T047 all `[X]`. Committed and pushed.
+
 ---
 
 ## 6. Validation — how to actually confirm Phase 1 works
@@ -1266,3 +1352,20 @@ expected status code, not real permission logic that doesn't exist
 yet) - flagged for re-verification once T042-T044 land. `apps/core/
 permissions.py` reached 100% test coverage, up from 0%. Proceeded to
 T042-T047 (views/serializers/urls implementation).
+
+**2026-08-02 (continued)** — T042-T047 (US2 implementation) complete.
+The follow-up flagged in the previous entry came true: real views
+exposed a genuine bug in `apps/core/permissions.py` (twice-reviewed,
+zero gaps found on paper) that only a live request through DRF's
+actual dispatch pipeline could surface — `has_permission()` was
+blocking wrong-role detail-route requests before
+`has_object_permission()`'s FR-012 404 logic could ever run. Fixed
+by deferring to object-level checks on detail routes; verified via
+full-file re-read, hand-traced dispatch order, 3 new regression
+tests, and confirming the previously-flagged 9 false-positive-pass
+tests now pass for the real reason. Second bug self-caught and fixed:
+`PageNumberPagination` without `page_size` silently broke the
+contract's response shape. Two test-authorship bugs self-disclosed
+(fixture-sharing collision, `force_authenticate` staleness requiring
+real session login for the FR-016 test). Final state: 96/96 tests
+passing, 84% overall coverage. Committed and pushed.
