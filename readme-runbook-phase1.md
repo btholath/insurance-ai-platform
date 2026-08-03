@@ -912,6 +912,85 @@ confirmed at the live database level, not taken on the migration
 file's word alone. Nothing committed to git yet as of this entry —
 see the next session's first action.
 
+### Session resume after laptop restart, and US2 test-writing (T036-T041)
+
+**Environment resume check.** After a laptop restart two days later,
+confirmed containers survived rather than assuming: `docker compose
+ps` showed `db`/`redis` healthy and `web` running (same
+already-diagnosed `unhealthy` status from the stub `/health/` view,
+not a new issue). A ~8-hour gap in the container's own healthcheck
+polling logs (visible via `docker compose logs web --timestamps`)
+lines up with the laptop sleeping overnight, not a crash — Docker
+doesn't count sleep time as downtime the way it would a real restart.
+
+**Audit table investigation — real explanation, not a regression.**
+A second row appeared in `audit_auditlog` (`id=2,
+reviewer@example.com, compliance_officer`) that wasn't visible in the
+last direct check before the restart. Investigated with a full
+column `SELECT` rather than assuming something new had happened:
+both rows' timestamps are from **2026-08-01**, 7 minutes apart —
+i.e., both from the *original* Foundational session, not new activity
+from the restart. `target_id = 99` on row 2 references a `User` that
+does not exist in `accounts_user` (currently empty) — accidental,
+free proof that FR-021 (audit survives referencing a deleted/never-
+persisted entity) genuinely holds, not a data-integrity problem.
+
+**T036-T041 (US2 tests) written and verified via direct pytest
+execution**, not accepted from the completion summary alone:
+```
+collected 54 items
+40 passed, 14 failed
+```
+
+**One real fix disclosed and verified**: `tests/conftest.py`'s shared
+fixtures (`api_client`, `user_in_role`, `authenticated_client`) were
+invisible to `apps/**/tests/*.py` because pytest only auto-loads a
+`conftest.py` for files under its own directory tree. Moved to the
+repo root (`conftest.py`). Verified via `git status` (shown as a
+clean rename, not delete+add) and `find` (exactly one `conftest.py`
+on disk, at the root) before trusting it worked.
+
+**The claimed test breakdown was close but incomplete — a genuine
+finding, not just a rubber-stamp.** Summary claimed "31 passing
+(T036/T037/T041), 14 failing (T038-T040)" = 45 tests. Actual: 54
+collected. The missing 9 are in `TestGetUserDetailRbacMatrix`
+(`test_unauthenticated_refused_404` + 8 per-role variants) — all
+**passing**, but not mentioned in either bucket. Investigation showed
+why: `apps/accounts/views.py`/`urls.py` don't exist yet (T042-T044,
+not yet run), so every request to `/api/users/{id}/` hits Django's
+own generic "no URL matched" 404 — which coincidentally equals the
+*expected* status code for these specific tests, even though the real
+`HasRole`-driven object-permission logic they're supposed to verify
+has never actually run. Confirmed this reasoning against the sibling
+test in the same class (`test_system_administrator_allowed_200`,
+expecting a real `200`) correctly failing for the same "no view yet"
+reason — proving these 9 aren't secretly working, just accidentally
+passing on the wrong mechanism.
+
+**Follow-up flagged for once T042-T044 land**: re-run these 9 tests
+and confirm they're passing for the *right* reason going forward -
+e.g. temporarily break something in `HasRole`'s object-permission
+path and confirm these tests actually catch it, rather than trusting
+a still-green result without ever having proven it means what it
+claims to mean.
+
+**Genuinely good, independently-verified outcome**: `apps/core/
+permissions.py` went from 0% to **100% test coverage** - the file
+hand-reviewed and trusted two sessions ago is now proven by automated
+tests covering its full behavior matrix (no superuser bypass,
+deny-by-default, the 404-vs-403 split), not just reasoned about from
+reading the source.
+
+Two new low-priority deprecation warnings surfaced (logged, not
+blocking): `CheckConstraint.check` (already known from Foundational)
+and a new one, `factory_boy`'s `UserFactory._after_postgeneration`
+save-behavior change coming in a future major release.
+
+**Verdict**: proceeded to T042-T047 (views/serializers/urls
+implementation) on the strength of this verification - the false-
+positive-pass finding is a real thing to re-check later, not a reason
+to block moving forward now.
+
 ---
 
 ## 6. Validation — how to actually confirm Phase 1 works
@@ -1171,3 +1250,19 @@ data-model, not accepted on Claude Code's summary alone. Session ending
 with the first commit of actual application code still pending —
 first action for the next session. Started `/speckit-implement`
 scoped correctly to US2 (T036-T041) as the next step once resumed.
+
+**2026-08-02** — Resumed after a 2-day laptop restart. Confirmed
+containers survived (not assumed) before proceeding. Investigated an
+apparently-new second audit row and confirmed via timestamps it was
+pre-existing from the original Foundational session, not new activity
+- along the way found accidental proof that FR-021 (audit survives a
+non-existent/deleted referenced entity) genuinely holds. Wrote and
+verified T036-T041 (US2 tests) via direct pytest execution: 54
+collected, 40 passed, 14 failed. Fixed a real `conftest.py` visibility
+bug (moved repo-root). Caught a genuine gap in the completion
+summary: 9 tests were passing for an unintended reason (Django's
+generic 404 for a nonexistent URL coincidentally matching the
+expected status code, not real permission logic that doesn't exist
+yet) - flagged for re-verification once T042-T044 land. `apps/core/
+permissions.py` reached 100% test coverage, up from 0%. Proceeded to
+T042-T047 (views/serializers/urls implementation).
