@@ -23,6 +23,10 @@ cp .env.example .env          # the only manual configuration step
 docker compose up --build -d  # builds the image, starts web + db + redis
 ```
 
+`.env.example`'s `SECRET_KEY` and `POSTGRES_PASSWORD` are placeholder values —
+functional for local development as-is, but replace them with real generated
+values before this ever runs anywhere reachable by anyone but you.
+
 **If `.env` already exists, `cp` overwrites it silently — no prompt, no
 backup.** If you've previously brought the stack up (so the `db` volume
 already holds data initialized with an earlier `.env`'s credentials),

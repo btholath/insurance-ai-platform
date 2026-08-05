@@ -201,10 +201,10 @@ Single Django project at repository root (per plan.md): `config/` (project setti
 
 **Purpose**: Final validation against the complete quickstart guide and constitution re-check; no new functional surface.
 
-- [ ] T069 [P] Run quickstart.md Scenario 1 (full environment) end-to-end exactly as documented, including the outbound-network-blocked check (SC-011) and the stop/restart data-persistence check (SC-010)
-- [ ] T070 [P] Run quickstart.md Scenarios 2–5 end-to-end exactly as documented (role enforcement matrix, audit immutability at both layers, health degradation for each dependency, full test suite) and confirm every "Expected" outcome matches
-- [ ] T071 Review `README.md`/setup docs against FR-007 and SC-001: have a fresh reader (or a clean-environment dry run) follow only the written docs and time the path to a running, tested system (target: under 30 minutes)
-- [ ] T072 Final coverage report review: confirm `apps/core`, `apps/accounts`, `apps/audit`, `apps/health` all have meaningful coverage from the tests written in Phases 2–7 (FR-031)
+- [X] T069 [P] Run quickstart.md Scenario 1 (full environment) end-to-end exactly as documented, including the outbound-network-blocked check (SC-011) and the stop/restart data-persistence check (SC-010)
+- [X] T070 [P] Run quickstart.md Scenarios 2–5 end-to-end exactly as documented (role enforcement matrix, audit immutability at both layers, health degradation for each dependency, full test suite) and confirm every "Expected" outcome matches
+- [X] T071 Review `README.md`/setup docs against FR-007 and SC-001: have a fresh reader (or a clean-environment dry run) follow only the written docs and time the path to a running, tested system (target: under 30 minutes)
+- [X] T072 Final coverage report review: confirm `apps/core`, `apps/accounts`, `apps/audit`, `apps/health` all have meaningful coverage from the tests written in Phases 2–7 (FR-031)
 
 ---
 
