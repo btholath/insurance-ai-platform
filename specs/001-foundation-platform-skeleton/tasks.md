@@ -160,16 +160,16 @@ Single Django project at repository root (per plan.md): `config/` (project setti
 
 ### Tests for User Story 4
 
-- [ ] T058 [P] [US4] Test in `apps/health/tests/test_checks.py`: `check_database()` and `check_cache()` each return `"ok"` when the dependency is reachable and `"error"` (never raising) when connection parameters point somewhere unreachable, completing within their 2-second timeout
-- [ ] T059 [P] [US4] Contract test in `apps/health/tests/test_views.py`: `GET /health/` with both dependencies healthy returns `200` with the exact three-key body from contracts/health.md; with `check_database`/`check_cache` mocked to fail individually, returns `503` identifying the correct failing dependency while the other stays `ok` (FR-026, FR-027, SC-007)
-- [ ] T060 [P] [US4] Test in `apps/health/tests/test_views.py`: response body contains only `status` and `checks.{database,cache}.status` — assert absence of any host/port/credential/version/exception-message keys (FR-028); assert no authentication is required
-- [ ] T061 [P] [US4] Test in `apps/health/tests/test_views.py`: response is returned within a bounded time (assert wall-clock duration in-test is well under 5s) even when a probe would otherwise hang (mock a slow/unresponsive dependency) — FR-027, SC-006
+- [X] T058 [P] [US4] Test in `apps/health/tests/test_checks.py`: `check_database()` and `check_cache()` each return `"ok"` when the dependency is reachable and `"error"` (never raising) when connection parameters point somewhere unreachable, completing within their 2-second timeout
+- [X] T059 [P] [US4] Contract test in `apps/health/tests/test_views.py`: `GET /health/` with both dependencies healthy returns `200` with the exact three-key body from contracts/health.md; with `check_database`/`check_cache` mocked to fail individually, returns `503` identifying the correct failing dependency while the other stays `ok` (FR-026, FR-027, SC-007)
+- [X] T060 [P] [US4] Test in `apps/health/tests/test_views.py`: response body contains only `status` and `checks.{database,cache}.status` — assert absence of any host/port/credential/version/exception-message keys (FR-028); assert no authentication is required
+- [X] T061 [P] [US4] Test in `apps/health/tests/test_views.py`: response is returned within a bounded time (assert wall-clock duration in-test is well under 5s) even when a probe would otherwise hang (mock a slow/unresponsive dependency) — FR-027, SC-006
 
 ### Implementation for User Story 4
 
-- [ ] T062 [US4] `apps/health/views.py`: unauthenticated `APIView` calling `check_database()` and `check_cache()` (both always run, independent of each other), returning `200` if both `ok` else `503`, body per contracts/health.md exactly
-- [ ] T063 [US4] `apps/health/urls.py`: route `GET /health/` to the view from T062, mounted at the root path (not under `/api/`) in `config/urls.py`
-- [ ] T064 [US4] Add the `web` service healthcheck to `docker-compose.yml` using the container's own Python against `http://localhost:8000/health/`, per the snippet in contracts/health.md (`interval: 10s`, `timeout: 5s`, `retries: 5`, `start_period: 30s`)
+- [X] T062 [US4] `apps/health/views.py`: unauthenticated `APIView` calling `check_database()` and `check_cache()` (both always run, independent of each other), returning `200` if both `ok` else `503`, body per contracts/health.md exactly
+- [X] T063 [US4] `apps/health/urls.py`: route `GET /health/` to the view from T062, mounted at the root path (not under `/api/`) in `config/urls.py`
+- [X] T064 [US4] Add the `web` service healthcheck to `docker-compose.yml` using the container's own Python against `http://localhost:8000/health/`, per the snippet in contracts/health.md (`interval: 10s`, `timeout: 5s`, `retries: 5`, `start_period: 30s`)
 
 **Checkpoint**: All four stories so far work independently; the health endpoint is now what Story 1's `depends_on: condition: service_healthy` and quickstart.md's verification both rely on.
 

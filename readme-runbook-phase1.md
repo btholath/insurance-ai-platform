@@ -1186,6 +1186,84 @@ tracked runbook, not only in that untracked store.
 `tasks.md` now shows T048-T057, T053a, and T053b all `[X]`. Committed
 as `a4340df` (10 files, 591 insertions) and pushed.
 
+### US4 completion (T058-T064) — a third real bug, and a weeks-old mystery finally closed
+
+Implemented `apps/health/checks.py` (rewritten), `apps/health/views.py`,
+`apps/health/urls.py`, and the Docker Compose `web` healthcheck (T064,
+though pulled forward earlier alongside T029/T003 - see the
+Foundational section above). Test-first sequence followed correctly.
+
+**A third real bug, continuing this session's established pattern**:
+`check_database()` originally reused Django's shared pooled database
+connection, which has no `connect_timeout` configured. Verified
+directly (not inferred) that a raw `psycopg` connection to an
+*unroutable* host (as opposed to one that actively refuses the
+connection) hangs indefinitely at the OS/TCP level - a genuine
+violation of FR-027's per-probe 2-second bound and SC-006's 5-second
+overall bound, specifically in a network-partition scenario a mocked
+"raises an exception" test would never surface. **Fixed** by rewriting
+`check_database()` to open its own fresh, explicitly-bounded connection
+(`connect_timeout=2`) per call via a context manager, mirroring
+`check_cache()`'s existing pattern - reviewed in full and confirmed
+the connection is properly closed after use, not leaked. A dedicated
+test (`test_check_database_against_unroutable_host_returns_error_
+within_timeout`) verifies this against a genuinely unroutable address,
+not a mock.
+
+**Final verified state**: `157 passed, 0 failed` (up from 143 after
+US3), `apps/health/checks.py` and `apps/health/views.py` both 100%
+coverage. **Overall project coverage: 96%** (482 statements, 21
+missed), up from 90%.
+
+**Docker's own `web` service healthcheck genuinely reports healthy for
+the first time this project** - confirmed via `docker inspect
+insurance-ai-platform-web-1 --format '{{json .State.Health}}'`
+showing `"Status": "healthy"`, `"FailingStreak": 0`, and four
+consecutive real probe cycles each with `"ExitCode": 0`. This resolves
+cleanly a mismatch that existed since Foundational: the healthcheck
+was pulled forward before `/health/` had a real implementation, so it
+had been correctly reporting `unhealthy` against a stub for the
+entire project until this moment.
+
+**The weeks-old `303`/`Server: Splunkd` mystery - fully diagnosed and
+closed, not just deferred again.** This exact response has recurred
+intermittently since the very first Docker smoke test at the start of
+this whole project, always attributed provisionally to "probably
+host-network interference" without ever being conclusively proven.
+This session finally ran it to ground with a systematic elimination:
+
+- Docker's own healthcheck (running **inside** the container's network
+  namespace, using Python's `urllib` per `contracts/health.md`) gets a
+  real response and reports healthy - proving the Django application
+  itself is, and has been, entirely correct.
+- A `curl` from the **host** shell, at the exact same moment against
+  the exact same running container, gets the familiar `303 See Other`
+  with `Location: .../en-US/health/` and `Server: Splunkd` - a header
+  no Django/gunicorn response would ever send.
+- Systematically ruled out every client-side explanation: `env | grep
+  -i proxy` empty (no proxy env vars), `127.0.0.1` fails identically to
+  `localhost` (rules out DNS/hostname-specific resolution), `curl
+  --noproxy '*'` makes no difference (rules out any curl-configurable
+  proxy setting).
+
+**Conclusion**: this is host-level network interception - almost
+certainly Splunk-branded endpoint security/traffic-inspection software
+installed on the Windows host, operating below the layer any
+WSL-side or curl-side configuration can see or bypass, intercepting
+loopback traffic to at least port 8000 regardless of hostname.
+**Not fixable from within this project or WSL alone.** Documented here
+as a closed, understood environmental fact rather than an open
+mystery: manual host-side `curl`/browser checks against local dev
+ports on this machine will show this interception; the application
+and Docker's own internal healthchecks are unaffected and are the
+correct source of truth going forward. Worth raising with IT/security
+for a local-dev-port allowlist exception at some point, not urgent.
+
+`tasks.md` now shows T058-T064 all `[X]`. Committed and pushed.
+Per the task list's dependency note, this also unblocks US1
+(T031-T035), whose own checkpoint queries `/health/` - the deliberate
+reason US4 was completed before US1 in this session.
+
 ---
 
 ## 6. Validation — how to actually confirm Phase 1 works
@@ -1498,3 +1576,21 @@ from 84%. Discovered and reviewed a project-scoped Claude Code memory
 system (untracked, outside the repo) - confirmed its inferred
 "user verification style" memory accurately reflects this runbook's
 established pattern. Committed as `a4340df`, pushed.
+
+**2026-08-05** — T058-T064 (US4: health check) complete. A third real
+bug found, same established pattern: `check_database()` used Django's
+untimeout'd pooled connection, which hangs indefinitely (not just
+slowly) against a genuinely unroutable host - a real FR-027/SC-006
+violation a mocked-failure test alone would never catch. Fixed with a
+fresh, explicitly-bounded connection per call, verified against a real
+unroutable address. 157/157 tests passing, 96% coverage, up from 90%.
+Docker's own `web` healthcheck genuinely reports healthy for the first
+time this project. Separately: finally ran the weeks-old `303`/
+`Server: Splunkd` anomaly to ground with a systematic elimination
+(proxy env vars, `127.0.0.1` vs `localhost`, `--noproxy`) - conclusively
+host-level network interception (likely Splunk-branded endpoint
+security software), not an application bug, proven by Docker's own
+internal healthcheck getting a correct response at the same moment a
+host-side `curl` doesn't. Documented as closed/understood rather than
+left as a recurring unexplained asterisk. Committed and pushed. US1
+now unblocked, as planned.
