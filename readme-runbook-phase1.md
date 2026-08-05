@@ -11,7 +11,6 @@ happened yet.
 Development and Claude Code specifically — every term gets explained
 on first use, not assumed knowledge.
 
-
 ---
 
 ## 1. What Phase 1 actually is
@@ -1318,6 +1317,78 @@ SC-008's 2-minute bound at ~22 seconds.
 Polish (T069-T072) remain to complete Phase 1 entirely** - 67 of 74
 tasks done (90.5%).
 
+### US5 completion (T065-T068) — all five user stories now done, plus a documentation-vs-reality gap and a self-inflicted verification miss
+
+Implemented `tests/integration/test_isolation.py` (T065), fixed
+`pyproject.toml`'s `addopts` (T066), and confirmed T067/T068 via a
+full suite run. This closes out **every** user story in
+`001-foundation-platform-skeleton` - US1 through US5 all complete.
+
+**T065 - a genuine, self-caught bug worth understanding.** The first
+draft compared `settings.DATABASES["default"]["NAME"]` against
+itself from inside the pytest process - meaningless, since
+pytest-django patches that dict in place at session setup rather than
+preserving a separate "dev" copy alongside it. Fixed by reading the
+real configured dev database name from the raw environment
+(`os.environ["POSTGRES_DB"]`) instead, which is genuinely independent
+of whatever pytest-django has mutated.
+
+**T066 - a real documentation-vs-configuration gap, not just a
+missing feature.** `README.md` and `quickstart.md` had both already
+*claimed* `--reuse-db` was "the local default" - stated as fact in
+two separate documents - but `pyproject.toml`'s `addopts` never
+actually included it. Every test run in this project, this whole
+session, had silently been creating and dropping a fresh test
+database each time. Fixed by wiring it in for real, then verified
+(not assumed) via `psql -U insurance_ai_platform -l` showing a
+genuinely persistent `test_insurance_ai_platform` database surviving
+across runs.
+
+**T068's isolation proof is genuinely rigorous, not just configured-
+and-trusted.** `test_writing_a_user_during_the_test_run_does_not_
+touch_the_dev_database` shells out via `subprocess.run()` to a
+*separate* `manage.py shell --settings=config.settings.dev` process
+to query real dev-database row counts before and after creating test
+users inside the pytest process - crossing the actual process/
+connection boundary rather than trusting Django's in-process test-
+runner claims, which is exactly the standard set by US4's real-
+unroutable-host test and US1's real-network-isolation test. Verified
+directly: dev user count (1) and audit count (2) identical before,
+between, and after two full suite runs.
+
+**A real, self-inflicted verification miss during this session's own
+review - worth logging honestly, not smoothed over.** The first
+"confirm the real test count" check used `docker compose exec web
+pytest apps/ -v`, which returned **166 passed**, not the claimed
+**170** - a discrepancy that looked concerning until investigated.
+Root cause: `tests/integration/test_isolation.py` and
+`test_environment.py` (from T031/T065) live under `tests/`, not
+`apps/`, and that command's path scope silently excluded them. Once
+both paths were included (`pytest apps/ tests/`), the real, complete
+run showed **170 passed, 0 failed** - matching the original claim
+exactly. Nothing was ever actually wrong; the verification command
+itself was incomplete. This is the third time this project a claimed
+test count didn't match an initial check (`collected 0 items` at
+Foundational, the `31 vs 45` undercount at US2) - each time the
+underlying explanation was benign, but each was real and worth
+tracing to ground rather than dismissed as noise.
+
+**Standing correction for this runbook itself**: every future "run
+the tests" instruction in this document, and any future session
+picking this project back up, should use `pytest apps/ tests/`
+(both paths), not `pytest apps/` alone - the latter has been silently
+under-scoped since T031 first added a file under `tests/integration/`.
+
+**Final verified state**: `170 passed, 0 failed`, 96% coverage
+(482 statements, 19 missed - one fewer miss than US4's checkpoint,
+from T065/T067's new subprocess-based tests exercising previously-
+uncovered lines in `config/settings/base.py` and `dev.py`), ~24
+seconds - comfortably under SC-008's 2-minute bound.
+
+`tasks.md` now shows T065-T068 all `[X]`. Committed as `abacf9e`
+(6 files, 82 insertions) and pushed. **71 of 74 tasks done (96%) -
+only Polish (T069-T072) remains to complete Phase 1 entirely.**
+
 ---
 
 ## 6. Validation — how to actually confirm Phase 1 works
@@ -1666,3 +1737,22 @@ can silently serve old code) not previously logged anywhere in this
 runbook. 168/168 tests passing, 96% coverage, ~22s runtime. Committed
 as `f254a36`, pushed. 67 of 74 tasks done (90.5%) - only US5 and
 Polish remain.
+
+**2026-08-05 (continued)** — T065-T068 (US5: test infrastructure
+closure) complete - all five user stories now done. Real self-caught
+bug in T065 (comparing a pytest-django-patched dict against itself,
+fixed by reading the raw environment instead). Real documentation-vs-
+config gap in T066 (`--reuse-db` claimed as default in two docs,
+never actually wired into `pyproject.toml`'s `addopts` - fixed and
+verified live via `psql -l`). T068's isolation proof genuinely crosses
+a process boundary via `subprocess.run()` rather than trusting in-
+process state. Also hit and resolved a real verification miss of our
+own: an initial recheck command scoped to `apps/` only reported 166
+tests instead of the claimed 170, traced to `tests/integration/`
+being silently excluded - not a real discrepancy once both paths were
+included, but the third such claimed-vs-actual gap this project and
+worth tracing to ground each time rather than assumed benign.
+Documented a standing correction: this runbook's own test-run
+instructions should use `pytest apps/ tests/` going forward, not
+`apps/` alone. 170/170 passing, 96% coverage. Committed as `abacf9e`,
+pushed. 71 of 74 tasks done (96%) - only Polish remains.
