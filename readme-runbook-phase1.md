@@ -1264,6 +1264,59 @@ Per the task list's dependency note, this also unblocks US1
 (T031-T035), whose own checkpoint queries `/health/` - the deliberate
 reason US4 was completed before US1 in this session.
 
+### US1 completion (T031-T035) — the lightest sub-phase, verified with the same rigor as the heaviest
+
+Implemented `apps/core/tests/test_settings.py` (T032),
+`tests/integration/test_environment.py` (T031), and `README.md`
+(T033) at the repo root - the first top-level project README this
+repo has had. T034 (commented-out db port mapping) was confirmed
+already satisfied from Foundational, needing no new work.
+
+**T035's two success criteria were verified live, not asserted** -
+consistent with the standard set by US4's unroutable-host test and
+the network-isolation check below:
+
+- **SC-010 (data survives restart)**: counted a real user row before
+  `docker compose down`/`up`, confirmed the *same* row (not a fresh
+  one) existed after - genuine persistence proof, not an assumption
+  from "the volume is declared as named, so it should persist."
+- **SC-011 (no external network dependency)**: brought the stack up
+  under a temporary `internal: true` network override, confirmed
+  outbound connectivity was genuinely blocked (`Network is
+  unreachable` - the real failure mode, not silently succeeding some
+  other way), and confirmed `/health/` still returned `200` under
+  that actual hostile condition. The override was fully reverted
+  afterward - independently confirmed via `git diff docker-compose.yml`
+  returning empty before committing, not just trusted from the
+  session's own "cleaned up" claim.
+
+**`README.md` reviewed in full, not just confirmed to exist.** Both
+gotchas repeatedly hit across this session are surfaced clearly and
+actionably, not just mentioned in passing:
+- The `.env`-overwrite gotcha (§7, `readme-runbook-phase1.md`'s own
+  forward-note from the Foundational session) - the README gives a
+  concrete pre-check command (`test -f .env && echo ...`) rather than
+  just a warning.
+- A **new** gotcha, not previously logged in this runbook: **no
+  dev-volume-mount** - the production Docker image doesn't
+  bind-mount source code, so running tests or the server against a
+  stale image after a code change will silently exercise old code
+  unless the image is explicitly rebuilt. Worth flagging here since
+  this runbook hadn't named this specific failure mode before, even
+  though its symptoms (confusing stale-behavior debugging) are exactly
+  the kind of thing this project's earlier sessions could plausibly
+  have hit without recognizing it for what it was.
+
+**Final verified state**: `168 passed, 0 failed`, 96% coverage
+(unchanged from US4 - T031/T032 exercise existing config/settings
+code paths rather than adding new production code). Well under
+SC-008's 2-minute bound at ~22 seconds.
+
+`tasks.md` now shows T031-T035 all `[X]`. Committed as `f254a36`
+(4 files, 247 insertions) and pushed. **Only US5 (T065-T068) and
+Polish (T069-T072) remain to complete Phase 1 entirely** - 67 of 74
+tasks done (90.5%).
+
 ---
 
 ## 6. Validation — how to actually confirm Phase 1 works
@@ -1594,3 +1647,21 @@ internal healthcheck getting a correct response at the same moment a
 host-side `curl` doesn't. Documented as closed/understood rather than
 left as a recurring unexplained asterisk. Committed and pushed. US1
 now unblocked, as planned.
+
+**2026-08-05 (continued)** — T031-T035 (US1: environment runs
+locally) complete. Lightest sub-phase, but held to the same live-
+verification standard as the heaviest: SC-010 (restart persistence)
+proven by tracking a specific real row across an actual `down`/`up`
+cycle, and SC-011 (no external network dependency) proven by
+deliberately isolating the stack (`internal: true` override) and
+confirming both a genuine outbound failure and a still-successful
+`/health/` response under that real hostile condition - with the
+override's full reversion independently confirmed via an empty
+`git diff docker-compose.yml`, not just trusted. First top-level
+`README.md` for the repo, reviewed in full: surfaces the known
+`.env`-overwrite gotcha with a concrete pre-check command, plus a
+newly-identified gotcha (no dev-volume-mount, meaning a stale image
+can silently serve old code) not previously logged anywhere in this
+runbook. 168/168 tests passing, 96% coverage, ~22s runtime. Committed
+as `f254a36`, pushed. 67 of 74 tasks done (90.5%) - only US5 and
+Polish remain.
