@@ -83,14 +83,14 @@ Single Django project at repository root (per plan.md): `config/` (project setti
 
 ### Tests for User Story 1
 
-- [ ] T031 [P] [US1] Integration test in `tests/integration/test_environment.py`: `docker compose ps`-equivalent smoke assertion is out of scope for pytest (it's a container-level check); instead write a pytest test that opens a real DB connection and a real Redis connection using the configured settings and asserts both succeed, proving the Django app's configuration correctly reaches both services
-- [ ] T032 [P] [US1] Test in `apps/core/tests/test_settings.py`: instantiate settings with a required env var missing (via `override_settings`/subprocess invocation of `manage.py check` with a stripped env) and assert `ImproperlyConfigured` is raised naming the missing setting (FR-005)
+- [X] T031 [P] [US1] Integration test in `tests/integration/test_environment.py`: `docker compose ps`-equivalent smoke assertion is out of scope for pytest (it's a container-level check); instead write a pytest test that opens a real DB connection and a real Redis connection using the configured settings and asserts both succeed, proving the Django app's configuration correctly reaches both services
+- [X] T032 [P] [US1] Test in `apps/core/tests/test_settings.py`: instantiate settings with a required env var missing (via `override_settings`/subprocess invocation of `manage.py check` with a stripped env) and assert `ImproperlyConfigured` is raised naming the missing setting (FR-005)
 
 ### Implementation for User Story 1
 
-- [ ] T033 [US1] `README.md` at repo root (or `docs/setup.md` if preferred): document the exact setup sequence from quickstart.md — clone, `cp .env.example .env`, `docker compose up --build -d`, `createsuperuser`, verifying `/health/` — written so a first-time operator needs no source-code reading (FR-007, SC-001)
-- [ ] T034 [US1] Add a commented-out host port mapping for `db` in `docker-compose.yml` for operators who want local `psql` access, without publishing it by default (research.md §10)
-- [ ] T035 [US1] Manually verify SC-010 (data survives restart) and SC-011 (no external network dependency) per quickstart.md Scenario 1b/1c, and record confirmation in the PR/commit description
+- [X] T033 [US1] `README.md` at repo root (or `docs/setup.md` if preferred): document the exact setup sequence from quickstart.md — clone, `cp .env.example .env`, `docker compose up --build -d`, `createsuperuser`, verifying `/health/` — written so a first-time operator needs no source-code reading (FR-007, SC-001)
+- [X] T034 [US1] Add a commented-out host port mapping for `db` in `docker-compose.yml` for operators who want local `psql` access, without publishing it by default (research.md §10)
+- [X] T035 [US1] Manually verify SC-010 (data survives restart) and SC-011 (no external network dependency) per quickstart.md Scenario 1b/1c, and record confirmation in the PR/commit description
 
 **Checkpoint**: User Story 1 is independently functional — the platform starts, persists data, and requires no outbound network access.
 
