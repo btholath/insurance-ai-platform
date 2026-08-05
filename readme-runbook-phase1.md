@@ -1077,6 +1077,115 @@ were genuinely at 0% otherwise: auth login/logout
 
 `tasks.md` now shows T036-T047 all `[X]`. Committed and pushed.
 
+### US3 completion (T048-T057, +T053a/T053b) — a second real bug, in the other highest-stakes file
+
+Implemented `apps/audit/serializers.py`, `apps/audit/views.py`
+(`AuditListView`, `AuditHistoryView`), `apps/audit/urls.py`, and a new
+migration. Test-first sequence followed correctly: all of
+T048-T054/T053a/T053b written and confirmed red (routes didn't exist)
+before any implementation, then T055 → T056 → T057 turned them green.
+
+**A second genuine bug, in `apps/audit/models.py` — the other file
+independently deep-reviewed with zero gaps found weeks earlier.**
+Together with US2's `permissions.py` bug, this confirms the lesson
+from that entry isn't a one-off: **static review of correctness logic,
+however careful, cannot substitute for exercising it against real
+interactions between subsystems** — here, specifically, the
+interaction between two independently-correct-looking pieces (the
+`SET_NULL` FK behavior for FR-021, and the append-only trigger for
+FR-019) that had never been tested *together* until a real user
+deletion actually needed to cascade through both at once.
+
+**The bug**: `AuditLog.actor` uses `on_delete=SET_NULL` specifically
+so audit entries survive actor deletion (FR-021, and directly
+verified via a real cascade in `test_deleting_actor_leaves_audit_
+entries_readable_with_actor_null`). But the existing `BEFORE UPDATE
+OR DELETE` trigger (migration `0002`) rejected *any* `UPDATE`
+unconditionally — including the exact `UPDATE ... SET actor_id =
+NULL` that Django's own cascade issues when the referenced user is
+deleted. Deleting any user who had ever taken an audited action would
+have hard-failed with a database exception instead of cleanly nulling
+the FK as designed.
+
+**The fix**: migration `0003_audit_log_immutable_trigger_allow_actor_
+null.py` replaces the trigger function with a narrow, explicit
+exception — verified in full, not summarized:
+```sql
+IF NEW.actor_id IS NULL
+    AND NEW.timestamp IS NOT DISTINCT FROM OLD.timestamp
+    AND NEW.actor_identifier IS NOT DISTINCT FROM OLD.actor_identifier
+    -- ...all 8 other columns, each IS NOT DISTINCT FROM its old value
+THEN
+    RETURN NEW;
+END IF;
+RAISE EXCEPTION 'audit_auditlog records are append-only...';
+```
+Verified this genuinely narrows to *only* the legitimate case, not a
+general loosening: every column except `actor_id` must be provably
+unchanged, and `actor_id` must specifically be transitioning to
+`NULL` (not just changing). `IS NOT DISTINCT FROM` (rather than `=`)
+is the correct operator choice here, since it handles `NULL`-to-`NULL`
+comparisons correctly on the nullable `before`/`after`/`context`
+columns, which a naive `=` would get wrong (SQL's `NULL = NULL`
+evaluates to `NULL`, not `true`). Confirmed live via `psql`, not just
+read from the migration file - the trigger is genuinely active on the
+running table.
+
+**`AuditHistoryView`'s deliberate deviation from the standard
+`GenericAPIView.get_object()` pattern** — read and verified, not just
+accepted: since a target's audit history can legitimately be an empty
+queryset (T053a explicitly requires `200`/`count: 0`, not `404`, for
+that case), the standard `get_object()`-based 404 flow would be wrong
+here. The view instead declares `lookup_url_kwarg` purely as the
+signal `HasRole` checks for route-type detection, then calls
+`check_object_permissions(request, None)` explicitly — getting the
+correct RBAC-driven 404 for unauthorized callers while preserving
+T053a's empty-but-permitted 200 case. A well-reasoned, correctly
+narrow deviation, not a shortcut.
+
+**A live-verification false alarm, correctly chased down and
+resolved rather than left ambiguous**: an ad-hoc `urllib`-based
+end-to-end check showed `POST /api/audit/` returning `403` instead of
+the expected `405`. Investigated properly rather than assumed
+either "bug" or "fine": confirmed the test admin genuinely had
+`system_administrator` role (ruling out a permissions explanation),
+traced DRF's actual `dispatch()` order (`http_method_not_allowed` is
+only reached *after* `initial()`'s permission checks, so a passing
+permission check should reach it), then re-tested with a fresh
+cookie jar and found the real cause: Django's `CsrfViewMiddleware`
+rejecting the unauthenticated-token `POST` before DRF's view logic
+ever ran — correct, expected framework behavior for session-
+authenticated browser-style requests, not a bug. The pytest suite's
+`APIClient` handles CSRF exemption transparently for tests, which is
+why the real suite correctly saw `405`. Resolved with a specific,
+verified explanation, not left as an unresolved discrepancy.
+
+**Final verified state**, direct pytest execution:
+```
+143 passed, 0 failed, 175 warnings in 5.51s
+```
+Coverage: `apps/audit/views.py` 100%, `serializers.py` 100%,
+`services.py` 100%, `models.py` 97% (one line, likely an unreachable
+defensive branch). **Overall project coverage: 90%** (467 statements,
+45 missed), up from 84% after US2.
+
+**New this session: a project-scoped Claude Code memory system
+discovered and reviewed.** Separate from this repo (stored at
+`~/.claude/projects/-home-bijut-insurance-ai-platform/memory/`, not
+version-controlled), Claude Code wrote two persistent memory files
+this session: one capturing the trigger/`SET_NULL` gotcha technically
+(for its own future reference), and one inferring this project's
+established verification style (independent re-verification, precise
+"tested vs. verified" language, mechanism-over-outcome explanations) -
+reviewed directly and confirmed as an accurate read of the pattern
+this runbook has enforced throughout, not something explicitly
+requested. Worth remembering this exists and lives outside version
+control - the substance worth keeping durably belongs here, in the
+tracked runbook, not only in that untracked store.
+
+`tasks.md` now shows T048-T057, T053a, and T053b all `[X]`. Committed
+as `a4340df` (10 files, 591 insertions) and pushed.
+
 ---
 
 ## 6. Validation — how to actually confirm Phase 1 works
@@ -1369,3 +1478,23 @@ contract's response shape. Two test-authorship bugs self-disclosed
 (fixture-sharing collision, `force_authenticate` staleness requiring
 real session login for the FR-016 test). Final state: 96/96 tests
 passing, 84% overall coverage. Committed and pushed.
+
+**2026-08-03** — T048-T057 (US3: audit trail, including analyze-
+remediation tasks T053a/T053b) complete. A second real bug found in
+previously-trusted code, confirming the US2 lesson generalizes: the
+append-only trigger (correct in isolation) and the `SET_NULL` actor
+FK (correct in isolation) had never been exercised *together* -
+deleting a user who'd taken an audited action would have hard-failed
+instead of cascading cleanly. Fixed via a new migration with a
+narrowly-scoped trigger exception, verified both by full-file read
+(confirmed the SQL condition genuinely narrows to only the legitimate
+case) and by a real cascade test. `AuditHistoryView`'s deliberate
+`get_object()` bypass (needed for T053a's empty-history-is-200 case)
+reviewed and confirmed correctly scoped. A live-verification anomaly
+(POST returning 403 instead of 405) was investigated to a specific,
+confirmed root cause (Django CSRF middleware, not a real bug) rather
+than left ambiguous. Final: 143/143 tests passing, 90% coverage, up
+from 84%. Discovered and reviewed a project-scoped Claude Code memory
+system (untracked, outside the repo) - confirmed its inferred
+"user verification style" memory accurately reflects this runbook's
+established pattern. Committed as `a4340df`, pushed.
