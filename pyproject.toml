@@ -24,7 +24,7 @@ test = [
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 testpaths = ["apps", "tests"]
-addopts = "--cov --cov-report=term-missing"
+addopts = "--reuse-db --cov --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["apps", "config"]

@@ -307,7 +307,8 @@ The suite includes, at minimum:
 | Stop (keep data) | `docker compose down` |
 | Stop and **erase** data | `docker compose down -v` |
 | Logs | `docker compose logs -f web` |
-| Run tests | `docker compose exec web pytest` |
+| Run tests (default: reuses the test DB) | `docker compose exec web pytest` |
+| Run tests after a migration change | `docker compose exec web pytest --create-db` |
 | Tests + coverage detail | `docker compose exec web pytest --cov-report=term-missing` |
 | Rebuild after dependency change | `docker compose up --build -d` |
 | Django shell | `docker compose exec web python manage.py shell` |
@@ -329,8 +330,10 @@ incompatible schema. `docker compose down -v` then `up --build -d` rebuilds from
 scratch. This **erases local data**; safe in this phase, since no business data
 exists yet.
 
-**Tests are slow** — `--reuse-db` is the local default. After a migration
-change, run once with `--create-db`.
+**Tests are slow** — `--reuse-db` is baked into the default `pytest`
+invocation (`pyproject.toml`'s `addopts`), so the test database persists
+across runs. After a migration change, run once with `pytest --create-db`
+to force a rebuild. See also the [README](../../README.md#everyday-commands).
 
 **`/health/` returns 503 right after startup** — the database may still be
 accepting connections. Wait for the `start_period` in the healthcheck to elapse;

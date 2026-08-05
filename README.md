@@ -76,7 +76,8 @@ That's it — clone to running platform, no undocumented steps.
 | Stop (keep data) | `docker compose down` |
 | Stop and **erase** data | `docker compose down -v` |
 | Logs | `docker compose logs -f web` |
-| Run tests | `docker compose exec web pytest` |
+| Run tests (default: reuses the test DB) | `docker compose exec web pytest` |
+| Run tests after a migration change | `docker compose exec web pytest --create-db` |
 | Tests + coverage detail | `docker compose exec web pytest --cov-report=term-missing` |
 | Rebuild after a source or dependency change | `docker compose up --build -d` |
 | Django shell | `docker compose exec web python manage.py shell` |
@@ -104,8 +105,12 @@ incompatible schema. `docker compose down -v` then `up --build -d` rebuilds
 from scratch. This **erases local data**; safe in this phase, since no
 business data exists yet.
 
-**Tests are slow** — `--reuse-db` is the local default. After a migration
-change, run once with `--create-db`.
+**Tests are slow** — `--reuse-db` is baked into the default `pytest`
+invocation (`pyproject.toml`'s `addopts`), so the test database persists
+across runs instead of being rebuilt every time. After a migration change,
+run once with `pytest --create-db` to force a rebuild; see
+[quickstart.md Scenario 5](specs/001-foundation-platform-skeleton/quickstart.md#scenario-5--the-test-suite-runs-from-day-one-story-5)
+for the full test-suite validation walkthrough.
 
 **`/health/` returns `503` right after startup** — the database may still be
 accepting connections. Wait for the healthcheck's `start_period` to elapse;

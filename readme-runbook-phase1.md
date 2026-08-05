@@ -11,6 +11,7 @@ happened yet.
 Development and Claude Code specifically — every term gets explained
 on first use, not assumed knowledge.
 
+
 ---
 
 ## 1. What Phase 1 actually is

@@ -185,13 +185,13 @@ Single Django project at repository root (per plan.md): `config/` (project setti
 
 ### Tests for User Story 5
 
-- [ ] T065 [P] [US5] Test in `tests/integration/test_isolation.py`: record the count of `User` rows via a non-pytest path (or a fixture simulating "dev data"), run a representative subset of the suite, and assert pytest-django's test database is distinct from the configured dev database name (FR-032)
+- [X] T065 [P] [US5] Test in `tests/integration/test_isolation.py`: record the count of `User` rows via a non-pytest path (or a fixture simulating "dev data"), run a representative subset of the suite, and assert pytest-django's test database is distinct from the configured dev database name (FR-032)
 
 ### Implementation for User Story 5
 
-- [ ] T066 [US5] Add `--reuse-db` as the documented default local test invocation and a documented `--create-db` variant for post-migration runs (research.md §11); record both in README/quickstart cross-reference
-- [ ] T067 [US5] Run the complete suite via `docker compose exec web pytest --cov-report=term-missing` and confirm: all tests pass, coverage report prints, total runtime is under 2 minutes (SC-008); address any failing test or timeout before proceeding
-- [ ] T068 [US5] Confirm `docker compose exec web pytest` run twice in a row produces identical dev-database row counts (FR-032, quickstart.md Scenario 5b) — manual verification recorded in commit/PR description
+- [X] T066 [US5] Add `--reuse-db` as the documented default local test invocation and a documented `--create-db` variant for post-migration runs (research.md §11); record both in README/quickstart cross-reference
+- [X] T067 [US5] Run the complete suite via `docker compose exec web pytest --cov-report=term-missing` and confirm: all tests pass, coverage report prints, total runtime is under 2 minutes (SC-008); address any failing test or timeout before proceeding
+- [X] T068 [US5] Confirm `docker compose exec web pytest` run twice in a row produces identical dev-database row counts (FR-032, quickstart.md Scenario 5b) — manual verification recorded in commit/PR description
 
 **Checkpoint**: All five user stories are independently functional and collectively verified — this is the full Phase 1 scope.
 
