@@ -1389,6 +1389,92 @@ seconds - comfortably under SC-008's 2-minute bound.
 (6 files, 82 insertions) and pushed. **71 of 74 tasks done (96%) -
 only Polish (T069-T072) remains to complete Phase 1 entirely.**
 
+### Polish completion (T069-T072) — Phase 1 fully done, all 74 tasks
+
+Implemented `apps/accounts/tests/test_managers.py`, added a placeholder-
+secret warning to `README.md`, and re-verified every quickstart
+scenario against real conditions rather than re-running the existing
+suite alone. **This closes every task in the
+`001-foundation-platform-skeleton` spec** - independently confirmed
+via `grep -c "\[ \]" tasks.md` returning `0`, not taken on the
+completion summary's word.
+
+**T069-T070 addressed the concern raised before this phase started
+directly, not by assertion but by actually doing it**: rather than
+re-running the suite against the long-lived dev database, Scenario 1
+was re-verified against genuinely adverse real conditions - a real
+`down`/`up` restart (user count identical, 1→1), a real `internal:
+true` network override (outbound genuinely blocked, `/health/` still
+`200` under that real condition), and, new this phase, **T069's 1d**:
+`POSTGRES_HOST` stripped via a Compose override and the container
+boot itself (not `manage.py check` in isolation) confirmed to abort
+with `ImproperlyConfigured`, naming the exact missing setting - proof
+the fail-fast behavior works through the actual startup path a real
+operator would hit, not just in a unit test calling the check
+function directly. Scenarios 2-5 were similarly re-verified against
+real HTTP/DB/psql interactions.
+
+**T071 - the fresh-clone timing test was done properly, not
+shortcut.** A genuine `git clone` into an isolated directory,
+following only `README.md`, timed end-to-end: **57 seconds**
+clone-to-verified-`/health/`, far under SC-001's 30-minute target.
+This directly answers the concern raised before Polish started about
+whether "under 30 minutes" reflected a first-time reader or an
+experienced user's fast pass - a genuinely fresh clone in an isolated
+directory is as close to a real first-time-reader simulation as this
+project can practically produce. **The dry run found a real gap**,
+not just a clean number: `README.md` never flagged that
+`.env.example`'s `SECRET_KEY`/`POSTGRES_PASSWORD` are functional-but-
+insecure placeholders - fixed, and verified present in the actual
+file (`grep -B2 -A5` confirmed the warning's exact wording and that it
+cross-references the existing `.env`-overwrite gotcha in the same
+spot, not scattered separately).
+
+**T072 - a real, non-cosmetic coverage gap found and closed.**
+`apps/accounts/managers.py`'s `create_superuser()` - the exact code
+path Django's own `createsuperuser` management command uses, meaning
+every real operator following the README's setup steps exercises this
+code - was at 64% with zero test coverage. `test_managers.py` (5 new
+tests) closes it, and does so properly: not just a happy-path test,
+but explicit tests that `create_superuser()` genuinely *rejects*
+`is_staff=False` and `is_superuser=False` rather than silently
+allowing a caller to create a "superuser" that isn't actually one -
+verified by reading the test file directly, not summarized.
+
+**Final verified state**, direct pytest execution:
+```
+175 passed, 0 failed, 98% coverage, 21.90s
+```
+Up from 170/96% at the end of US5. All four apps T072 named are at
+100% except two intentionally-untested `__str__` methods.
+
+`tasks.md` now shows T069-T072, and every other task in the file,
+`[X]`. Committed as `cde854e` (3 files, 53 insertions) and pushed.
+
+## Phase 1 — genuinely, fully complete
+
+**74 of 74 tasks done.** Setup, Foundational, and all five user
+stories (US1-US5), plus Polish. Every constitution principle this
+phase was scoped to satisfy (I: local-first, II: audit logging, III:
+server-side RBAC, V: test-first) has real, live-verified evidence
+behind it, not just design-document assertions - independently
+confirmed at every step across this entire runbook, not taken on any
+single summary's word.
+
+**Real bugs found and fixed along the way, none of them caught by
+static review alone**: a `has_permission`/`has_object_permission`
+DRF dispatch-order bug (US2), an audit-immutability-trigger vs.
+`SET_NULL`-cascade interaction bug (US3), an unbounded-hang database-
+timeout bug (US4), a `--reuse-db` documentation-vs-configuration gap
+(US5), and a real, operator-facing coverage gap in `create_superuser()`
+(Polish). Every one of these was found by actually exercising the
+system under real conditions - real requests, real cascades, real
+network partitions, real fresh clones - not by reading code, however
+carefully, in isolation. That is the single throughline of this
+entire runbook, worth carrying into Phase 2 and beyond: **trust, but
+verify against reality, every time, even when - especially when -
+the summary sounds confident.**
+
 ---
 
 ## 6. Validation — how to actually confirm Phase 1 works
@@ -1756,3 +1842,21 @@ Documented a standing correction: this runbook's own test-run
 instructions should use `pytest apps/ tests/` going forward, not
 `apps/` alone. 170/170 passing, 96% coverage. Committed as `abacf9e`,
 pushed. 71 of 74 tasks done (96%) - only Polish remains.
+
+**2026-08-05 (continued) — Phase 1 complete.** T069-T072 (Polish)
+done: quickstart re-verified against real adverse conditions (restart,
+network isolation, missing-config boot failure, all through the real
+paths an operator would hit, not isolated unit calls); a genuine
+fresh `git clone` timed the real SC-001 target at 57 seconds and found
+a real gap (README never flagged `.env.example`'s placeholder secrets
+- fixed); a real, operator-facing coverage gap in
+`create_superuser()` found and closed with tests that verify it
+genuinely rejects non-superuser flag combinations, not just the happy
+path. Final: 175/175 tests, 98% coverage. Committed as `cde854e`,
+pushed. **All 74 tasks in `001-foundation-platform-skeleton` done -
+Phase 1 fully complete**, verified via `grep -c "\[ \]" tasks.md`
+returning `0`. Five real bugs found and fixed across the phase (US2
+permission dispatch, US3 trigger/SET_NULL interaction, US4 unbounded
+timeout, US5 --reuse-db gap, Polish's create_superuser coverage gap),
+none catchable by static review alone - the throughline for Phase 2
+and beyond: verify against real conditions, every time.
