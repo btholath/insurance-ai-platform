@@ -11,3 +11,4 @@ htmlcov/
 .coverage
 *.egg-info/
 staticfiles/
+data/Insurance_Dataset.csv
