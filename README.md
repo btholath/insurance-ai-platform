@@ -95,6 +95,51 @@ from a `COPY . /app` step, so `docker compose up -d` alone will keep running
 whatever code was baked into the image at the last `--build`. Running tests
 or the server against a stale image will silently exercise old code.
 
+## Customer module
+
+### Loading the source dataset
+
+```bash
+docker compose exec web python manage.py loadcustomers data/Insurance_Dataset.csv
+# → Created: 3000  Updated: 0  Refused: 0
+```
+
+The path is required — there is no default, because the dataset is **not
+committed** and must never be (it holds PII; `.gitignore` keeps it out).
+Add `--dry-run` to validate and report counts without writing.
+
+The load is **idempotent**, matched on the source's `Client_ID`. Re-running it
+on unchanged input reports `Created: 0  Updated: 3000` and creates no
+duplicates, so a re-run after a failed or partial load is safe. Columns the
+customer record does not use (policy, claim, feedback) are ignored, so the
+same file will later serve the Policy and Claims loaders.
+
+### Endpoints
+
+| Method | Path | Roles |
+|---|---|---|
+| `GET` | `/api/customers/` | the seven viewing roles |
+| `GET` | `/api/customers/{id}/` | the seven viewing roles |
+| `POST` | `/api/customers/` | Customer Service, System Administrator |
+| `PATCH` | `/api/customers/{id}/` | Customer Service, System Administrator |
+| `DELETE` | `/api/customers/{id}/` | Customer Service, System Administrator |
+
+Product Manager and Executive Leadership cannot view customers — their needs
+are aggregate reporting rather than individual personal data.
+
+List supports `?search=` (name, email, or reference; case-insensitive) and
+`?lead_source=`, `?gender=`, `?fraud_risk_flag=` filters, paginated at 50.
+
+Two behaviours are deliberate and worth knowing before you debug them:
+
+- **`DELETE` archives, it does not destroy.** The record leaves every list,
+  search, and detail response, but the row and its reference are retained so
+  policies and claims added later can never be orphaned, and so a re-load
+  reconciles against it instead of creating a duplicate.
+- **Refusals on detail routes return `404`, not `403`.** A `403` would confirm
+  the record exists. Collection routes return `403`, since there is nothing to
+  disclose. Every refusal is written to the audit log.
+
 ## Troubleshooting
 
 **`web` never becomes healthy** — check `docker compose logs web`. Most often

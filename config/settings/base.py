@@ -98,6 +98,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Records permission refusals to the audit log (FR-030). Delegates the
+    # response itself to DRF, so non-disclosure behaviour is unchanged.
+    "EXCEPTION_HANDLER": "apps.core.exception_handlers.audited_exception_handler",
 }
 
 LANGUAGE_CODE = "en-us"

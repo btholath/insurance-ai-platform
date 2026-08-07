@@ -184,16 +184,20 @@ Per Principle V, tests precede implementation within each stage.
 | Refusal handler logging ordinary 404s as permission refusals | Handler consults `request.user`'s role; a permitted user's 404 is a miss, not a refusal (research.md §4). |
 | Validation drifting between API and loader | Loader uses the same serializer — one definition, exercised by both. |
 
-## Known Spec Defect
+## Known Spec Defect — RESOLVED
 
-The spec numbers two requirements **FR-013**: the score-range rule under
+The spec numbered two requirements **FR-013**: the score-range rule under
 *Validation*, and a reference in *Edge Cases* to "the removal behavior defined
 in FR-013" — where the actual archival requirement is **FR-020**.
 
-This plan reads FR-013 as the score-range rule and FR-020 as the archival rule,
-consistent with the Requirements section itself. No requirement is dropped
-under this reading and the design is unaffected. Worth correcting in the spec
-before `/speckit-tasks` so task numbering does not inherit the ambiguity.
+**Corrected in `spec.md` on 2026-08-06**: the Edge Cases reference now points
+to FR-020. All remaining FR-013 references (the definition itself, FR-038's
+"FR-009 through FR-013" range, and SC-007's identical range) were audited and
+are correct as written — they all mean the score-range rule.
+
+FR-013 now has a single meaning throughout: score-range validation. FR-020 is
+the archival rule. The design was unaffected either way, since this plan
+already used that reading.
 
 ## Complexity Tracking
 
