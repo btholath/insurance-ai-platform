@@ -1,7 +1,8 @@
-from django.urls import path
+from rest_framework.routers import DefaultRouter
 
-from .views import PlaceholderView
+from .views import PolicyViewSet
 
-urlpatterns = [
-    path("placeholder/", PlaceholderView.as_view(), name="policies-placeholder"),
-]
+router = DefaultRouter()
+router.register(r"", PolicyViewSet, basename="policy")
+
+urlpatterns = router.urls

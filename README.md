@@ -95,24 +95,39 @@ from a `COPY . /app` step, so `docker compose up -d` alone will keep running
 whatever code was baked into the image at the last `--build`. Running tests
 or the server against a stale image will silently exercise old code.
 
-## Customer module
-
-### Loading the source dataset
+## Loading the source dataset
 
 ```bash
-docker compose exec web python manage.py loadcustomers data/Insurance_Dataset.csv
-# → Created: 3000  Updated: 0  Refused: 0
+docker compose exec web python manage.py loaddataset data/Insurance_Dataset.csv
+# → Customers — created: 3000  updated: 0  refused: 0
+# → Policies  — created: 3000  updated: 0  refused: 0
 ```
+
+The command loads **customers and their policies together**, in one pass.
+It was called `loadcustomers` in Phase 2a; that name still works as an
+alias and behaves identically, including creating policies.
 
 The path is required — there is no default, because the dataset is **not
 committed** and must never be (it holds PII; `.gitignore` keeps it out).
 Add `--dry-run` to validate and report counts without writing.
 
-The load is **idempotent**, matched on the source's `Client_ID`. Re-running it
-on unchanged input reports `Created: 0  Updated: 3000` and creates no
-duplicates, so a re-run after a failed or partial load is safe. Columns the
-customer record does not use (policy, claim, feedback) are ignored, so the
-same file will later serve the Policy and Claims loaders.
+The load is **idempotent** on both record types. Customers match on the
+source's `Client_ID`; policies match on `(customer, policy_type)` among
+live rows. Re-running on unchanged input reports everything as `updated`
+and creates no duplicates, so a re-run after a failed or partial load is
+safe. The four claim columns are still ignored, reserved for Claims.
+
+Two behaviours are worth knowing before you debug them:
+
+- **A row lands completely or not at all.** The policy is validated before
+  either record is written, and both share one transaction. A row with a
+  bad policy is reported as refused — with its row number and the
+  offending field — and leaves no customer behind.
+- **A load never resurrects an archived policy.** Matching is restricted
+  to live rows, so a load after an archival creates a *fresh* policy
+  rather than silently undoing a deliberate removal.
+
+## Customer module
 
 ### Endpoints
 
@@ -139,6 +154,48 @@ Two behaviours are deliberate and worth knowing before you debug them:
 - **Refusals on detail routes return `404`, not `403`.** A `403` would confirm
   the record exists. Collection routes return `403`, since there is nothing to
   disclose. Every refusal is written to the audit log.
+
+## Policy module
+
+### Endpoints
+
+| Method | Path | Roles |
+|---|---|---|
+| `GET` | `/api/policies/` | the eight viewing roles |
+| `GET` | `/api/policies/{id}/` | the eight viewing roles |
+| `POST` | `/api/policies/` | Underwriter, System Administrator |
+| `PATCH` | `/api/policies/{id}/` | Underwriter, System Administrator |
+| `DELETE` | `/api/policies/{id}/` | Underwriter, System Administrator |
+
+Every role except Executive Leadership may read policies. List supports
+`?customer=`, `?policy_type=` (`Life`/`Auto`/`Property`/`Health`), and
+`?expired=true|false`, combinable, paginated at 50. Read responses embed a
+minimal customer summary, so reviewing a customer's coverage needs no
+second request per row.
+
+`DELETE` archives rather than destroys, as with customers — but unlike
+customers, archiving a policy **releases** its `(customer, policy_type)`
+slot, so the customer may hold a new policy of that type.
+
+`expired` is derived per request by comparing `end_date` to today. There is
+no stored expiry flag, so the answer is always current without a scheduled
+job maintaining it.
+
+### Two deliberate divergences from the customer module
+
+These are intentional, not drift. Both are pinned by tests
+(`apps/policies/tests/test_permissions.py`) so neither module gets
+"harmonized" into the other by a later change:
+
+| | Customer | Policy |
+|---|---|---|
+| **Who writes** | Customer Service | **Underwriter** |
+| **Product Manager reads** | no | **yes** |
+
+Writing policy terms is underwriting work, not service work. And product
+mix is a product concern, while individual personal data is not — which is
+why a Product Manager's `404` on a missing policy is an ordinary miss,
+while the same user's `404` on a missing customer is a recorded refusal.
 
 ## Troubleshooting
 

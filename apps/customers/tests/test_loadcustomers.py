@@ -99,9 +99,7 @@ def test_reports_created_count(tmp_path, capsys):
     call_command("loadcustomers", path)
 
     out = capsys.readouterr().out
-    assert "Created: 2" in out
-    assert "Updated: 0" in out
-    assert "Refused: 0" in out
+    assert "Customers — created: 2  updated: 0  refused: 0" in out
 
 
 def test_zero_cross_sell_score_loads_as_zero_not_null(tmp_path):
@@ -132,8 +130,7 @@ def test_rerun_on_unchanged_input_creates_nothing(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert Customer.objects.count() == 2
-    assert "Created: 0" in out
-    assert "Updated: 2" in out
+    assert "Customers — created: 0  updated: 2  refused: 0" in out
 
 
 def test_rerun_leaves_no_duplicate_references(tmp_path):
@@ -269,7 +266,7 @@ def test_blank_client_id_row_is_refused_naming_the_field(tmp_path, capsys):
     assert Customer.all_objects.count() == 0
     assert "Row 1" in out
     assert "client_id" in out
-    assert "Refused: 1" in out
+    assert "Customers — created: 0  updated: 0  refused: 1" in out
 
 
 # ---------------------------------------------------------------------------
@@ -304,8 +301,7 @@ def test_valid_rows_persist_alongside_refused_rows(tmp_path, capsys):
     out = capsys.readouterr().out
     assert Customer.objects.count() == 2
     assert not Customer.all_objects.filter(client_id="CL-00002").exists()
-    assert "Created: 2" in out
-    assert "Refused: 1" in out
+    assert "Customers — created: 2  updated: 0  refused: 1" in out
 
 
 def test_extra_columns_ignored(tmp_path):
@@ -323,7 +319,7 @@ def test_dry_run_writes_nothing(tmp_path, capsys):
     call_command("loadcustomers", path, "--dry-run")
 
     assert Customer.all_objects.count() == 0
-    assert "Created: 1" in capsys.readouterr().out
+    assert "Customers — created: 1  updated: 0  refused: 0" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +348,9 @@ def test_load_audit_entries_have_no_human_actor(tmp_path):
 
     entry = AuditLog.objects.get(target_type="customers.Customer")
     assert entry.actor is None
-    assert entry.context["source"] == "loadcustomers"
+    # The real loader, not the alias the operator happened to type -- the
+    # trail should name the code that ran (FR-048).
+    assert entry.context["source"] == "loaddataset"
 
 
 def test_load_audit_context_records_file(tmp_path):

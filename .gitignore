@@ -12,3 +12,5 @@ htmlcov/
 *.egg-info/
 staticfiles/
 data/Insurance_Dataset.csv
+test-results-*.txt
+test-results-*.txt
