@@ -19,7 +19,7 @@ each sub-phase actually happens.
 | Sub-phase | Status | Depends on |
 |---|---|---|
 | **2a — Customer Management** | ✅ Done | Phase 1 Foundation only |
-| 2b — Policy Management | ⏳ Not started | 2a (Customer FK) |
+| **2b — Policy Management** | ✅ Done | 2a (Customer FK) |
 | 2c — Claims Management | ⏳ Not started | 2b (Policy FK) |
 
 Sequenced deliberately — Policy will hold a foreign key to Customer,
@@ -59,10 +59,26 @@ that produced these):
   safety benefit.
 - **Verification commands need their own correctness checked before
   trusting a surprising result from them.** A flawed `pytest` path
-  argument (see §3.3) produced a real, alarming-looking discrepancy
+  argument (see §3.5) produced a real, alarming-looking discrepancy
   that had nothing to do with the actual implementation — the "verify,
   don't trust" discipline applies to the verifier's own tooling too,
   not only to what's being verified.
+
+**New, established during 2b**:
+
+- **A passing test run proves nothing if the container image itself is
+  stale.** `docker compose exec web pytest` can report a clean,
+  plausible-looking pass count while running against code that
+  predates the current working tree entirely, if the image was never
+  rebuilt after source changes (this project has no dev-time volume
+  mount by design — see Phase 1's own documented no-dev-volume-mount
+  gotcha). The tell isn't the pass/fail line, which can look completely
+  normal — it's the **coverage table**: new or changed modules showing
+  as absent or unexpectedly low-coverage is the actual signal a stale
+  image is being tested instead of the real one. Worth a habit: after
+  any `/speckit-implement` session, confirm a `--build` has actually
+  happened before trusting a "baseline" pytest run, not just that one
+  was run.
 
 ---
 
@@ -312,12 +328,237 @@ stable and accounted-for across the entire session.
 
 ---
 
-## 4. Phase 2b — Policy Management
+## 4. Phase 2b — Policy Management (complete)
 
-⏳ PENDING — not yet started. Depends on 2a's `Customer` model
-(foreign key). Same specify → plan → tasks → analyze → implement
-cycle; same standing rules from §2 apply, including the dev-database
-permission boundary established in 2a.
+### 4.1 What it delivers
+
+Real `Policy` model and CRUD API (`apps/policies/`), replacing Phase
+1's placeholder endpoint. FK to `apps.customers.Customer`. Fields per
+the Phase 0 CSV: `policy_type` (Life/Auto/Property/Health),
+`start_date`/`end_date`, `premium_usd`, plus nullable
+`renewal_probability` (storage only, same deferred-scoring pattern as
+Customer's risk/fraud/cross-sell fields). The CSV loader extends to
+seed Policy records alongside Customer's, in the same transaction per
+row. RBAC and audit logging reuse the existing mechanisms — and this
+sub-phase generalizes the audit-refusal mechanism itself, previously
+hardcoded to Customer alone, into a shared registry both modules (and
+Claims, next) draw from.
+
+### 4.2 Spec review — every prior-session concern correctly incorporated
+
+Before `/speckit-specify` ran, checking the actual codebase (not
+assumption) confirmed the refusal handler was genuinely hardcoded to
+`/api/customers/` and `customers.Customer` in four separate places —
+extending it to Policy was real work, not a free inherit, and the
+spec was written with that explicitly as scope. All dataset claims in
+the Assumptions section were independently re-verified against the
+real CSV rather than trusted: coverage types (`Auto/Health/Life/
+Property`), premium range (`$100.68`-`$4,997.79`), zero `end_date ≤
+start_date` violations across all 3,000 rows, zero blanks, 3,000
+unique `Client_ID`s matching 3,000 rows — every number checked out
+exactly.
+
+**Both interactive Q&A decisions were resolved deliberately, not
+defaulted through**:
+- **Cardinality** (`FR-003`): a customer may hold multiple policies,
+  even though the current dataset happens to be 1:1 — a real insurance
+  platform shouldn't have a business rule baked in permanently just
+  because one synthetic sample happened to be shaped that way. A note
+  was attached flagging that the loader's re-run matching therefore
+  needs to key on `(customer, policy_type)`, not customer alone — this
+  landed in the spec as `FR-039` essentially verbatim.
+- **Archive cascade**: policies stay live and linked when their
+  customer is archived (Option 1), *not* cascaded (Option 2) or
+  blocking (Option 3). Option 3 was specifically ruled out on real
+  evidence, not preference — the hidden preview text confirmed *all
+  3,000 seeded customers hold a live policy*, meaning a
+  block-until-resolved rule would have made customer archival
+  completely non-functional against the actual dataset from day one.
+  Cascade (Option 2) was rejected on the grounds that archiving a
+  customer record (a CRM action) and archiving a policy (an insurance-
+  coverage action) are genuinely different business events that
+  shouldn't be automatically coupled.
+
+No FR-numbering defects this time (Customer's spec had the FR-013/
+FR-020 duplicate) — checked specifically, Edge Cases correctly
+cross-references FR-021 exactly as it should.
+
+### 4.3 Plan review — two genuinely sharp, independently-verified findings
+
+**Live-scoped `(customer, policy_type)` uniqueness — deliberately the
+*opposite* of Customer's reference-reservation pattern, and correct to
+be so.** Customer's archived `client_id` stays reserved forever
+(prevents a CSV re-run from ever creating a duplicate). If Policy's
+uniqueness copied that same "archived still counts" logic, a customer
+would be permanently blocked from ever getting a new policy of a given
+type after their old one was archived — wrong, since canceling and
+later re-issuing the same coverage type is normal. The plan correctly
+recognized these two entities need *opposite* semantics despite a
+superficially similar archival shape, rather than mechanically reusing
+Customer's pattern because it worked there.
+
+**The archived-customer FK resolution bug, caught before it could
+exist.** *"FK resolved through `Customer.objects` would 404 policies
+of archived customers"* — proactively identified, and the plan
+specified both traversal directions (Policy→Customer, Customer→Policy)
+get **separately** tested, since they fail independently. Confirmed
+this reasoning carried through into `T016`, which explains the
+concrete human consequence too: resolving through the wrong manager
+*"would produce the misleading second message and send an underwriter
+hunting for a record that was deliberately removed."*
+
+**The refusal-handler generalization — explicitly flagged as the
+highest-risk change in the whole plan**, because it modifies shipped,
+Phase 2a-tested code rather than only adding new code: *"It currently
+hardcodes customer knowledge in four places... this is the highest-
+risk change here: it touches shipped, tested code."* Refactored into a
+registry keyed by route prefix (`apps/core/audit_routes.py`) rather
+than adding a third hardcoded copy for Policy (with Claims as an
+already-known fourth consumer coming next) — turning "add a new
+audited module" into a data-entry problem instead of a
+code-duplication problem.
+
+### 4.4 Tasks review — real engineering discipline, not just checkbox coverage
+
+85 tasks (vs. Customer's 69) — larger, reflecting the registry
+refactor as genuinely new shared infrastructure, not just
+Policy-specific CRUD. Several things worth naming specifically:
+
+- **A new pattern**: `T002`/`T003` capture a provable baseline
+  *before* touching shipped code — *"record the passing count
+  (expected: 389)"* and *"record the current customer audit test
+  count... expected: 22... the number must not change"* — so any
+  regression from the risky refactor is immediately demonstrable, not
+  just suspected.
+- **Deliberate sequencing to isolate risk**: the registry refactor
+  (`Phase 4`, marked `🔴 HIGHEST RISK`) runs *before* any Policy route
+  exists, specifically so it can be verified against the existing
+  Customer suite alone — *"Doing it after policy routes emit refusals
+  would tangle 'did the refactor break customers?' with 'is the new
+  policy behaviour right?'"*
+- **A guardrail against a real anti-pattern**: `T071` explicitly
+  states that if a Policy audit entry looks wrong, the fix belongs in
+  the per-module registry data (`audit_routes.py`), *never* the shared
+  handler — protecting the refactor from the exact kind of
+  module-specific patch creeping back into shared code that
+  generalizing it was meant to prevent.
+- **A test defending a deliberate design choice from a plausible
+  future mistake**: `T063`'s "cross-module asymmetry" test pins that
+  Product Manager and Customer Service have genuinely *different*
+  permissions between Customer and Policy — specifically so a future
+  engineer noticing the similar-looking matrices doesn't "harmonize"
+  them without realizing the difference was intentional.
+- **Cross-session memory correctly applied**: `T065` explicitly
+  recalls the `force_authenticate` staleness gotcha from **Phase 1's**
+  own US2 testing, not just Customer's more recent lessons.
+
+### 4.5 Implementation — three real bugs, one high-risk refactor landing clean, and a resolved cross-session evidence question
+
+**Bug 1 — a falsely-green baseline from a stale container image.**
+`docker compose exec web pytest` initially reported a clean `389`
+passing while none of the Phase 2b files existed inside the running
+container at all — the image had never been rebuilt after source
+changes and was still serving code baked on July 31. **The tell
+wasn't the pass/fail line, which looked completely normal — it was
+the coverage table**, showing the new modules as entirely absent
+rather than low-coverage. This is now documented as a new standing
+rule (§2) — a passing run alone proves nothing if the image itself is
+stale, and this project has no dev-time volume mount by design, so
+this exact failure mode is a real, recurring risk, not a one-off.
+Resolved by switching to a bind-mounted runner for the fast TDD loop,
+then a final `--build` run so the deployable image is what actually
+got verified. True baseline, once rebuilt: 453 tests, 4 failures —
+genuinely different from the false `389`.
+
+A real cross-session question this raised — **whether the Customer
+Management `389`-test confirmation done earlier in this project (and
+the separate `228`-vs-`389` pytest-path investigation) were also
+against a stale image** — was resolved directly, not left open.
+Claude Code correctly stated it had no record of those events and
+declined to fabricate a connection ("I'd rather say so than
+reconstruct a plausible-sounding history"). Resolved independently
+instead, using evidence available at review time: the `228`-item
+collection output from that earlier investigation contained live,
+genuine `apps/customers/tests/` entries, and the corrected `389` run's
+coverage table showed real coverage numbers for Customer's own code —
+neither is possible against an image old enough to predate Customer
+Management entirely. The two incidents are confirmed unrelated: the
+earlier `228` was a real, already-diagnosed pytest redundant-path bug
+(§3.5); this session's staleness is a distinct, newly-discovered risk.
+Worth recording as its own small lesson: an "I don't know" answered
+honestly, then actually resolved with available evidence, is more
+valuable than either a guessed answer or an unresolved worry.
+
+**Bug 2 — an FR-015 message-contract violation, from DRF's own
+auto-generated validator.** `UniqueTogetherValidator`, synthesized
+automatically by DRF from the model's `UniqueConstraint`, ran *before*
+`validate()` and reported the duplicate-policy error under
+`non_field_errors` — meaning the response never named `policy_type` as
+the contract required, despite the explicit validation logic being
+written correctly. Fixed by disabling the auto-generated validator so
+the explicit check owns the error message. A genuinely subtle DRF
+internals interaction, not a logic mistake.
+
+**Bug 3 — an FR-031 gap latent since Phase 2a, only surfaced now.**
+An unpermitted user hitting a *nonexistent* record ID recorded no
+refusal, in both Customer and Policy. Root cause: Django's
+`get_object_or_404` (used inside `get_object()`) raises `Http404`, not
+DRF's `NotFound` — and the refusal handler's `isinstance` check only
+covered `NotFound`, silently missing every case where the target
+didn't exist at all. Phase 2a's own test suite only ever exercised the
+*permitted* user's 404 case, never the unpermitted-user-plus-
+nonexistent-id combination, so this gap went undetected through the
+entirety of Customer's "zero gaps found" review. Fixed in the shared
+handler (confirmed directly: `_REFUSAL_EXCEPTIONS` now includes
+`Http404` alongside `NotFound`, with a docstring explaining the real
+framework distinction) — and the Phase 4 regression gate (22/22
+Customer audit tests) was re-run and confirmed passing *after* this
+fix, proving it didn't just fix Policy while silently breaking
+Customer's existing behavior.
+
+**The high-risk registry refactor landed clean.** `apps/core/
+audit_routes.py` now holds an `AuditedRoute` registry (prefix, target
+type, action prefix, role sets), populated in `CoreConfig.ready()`
+(not at import time — confirmed via `git diff apps/core/apps.py`,
+correctly reasoned: the handler is referenced from `settings.py`,
+which loads before the app registry can import models). The T002/T003
+baseline gate held with a genuinely zero-line diff on the Customer
+audit test file itself.
+
+**Two judgment calls disclosed, not hidden**: Phases 1-3 turned out to
+already be implemented from a prior session — verified rather than
+blindly rewritten, and one broken test helper found and fixed along
+the way (`payload(customer=<pk>)` calling `.pk` on an already-integer
+value). And six assertions in Customer's own `test_loadcustomers.py`
+needed updating for the loader's new two-line count output format — a
+real, contract-specified behavior change, but still an edit to
+*shipped* tests, called out explicitly rather than silently folded in.
+
+**One task correctly deferred, not skipped silently**: `T083` (the
+real dev-DB `loaddataset` run) was held pending explicit approval,
+consistent with the ask-first boundary from 2a — the interactive
+prompt for this decision (dev-DB write vs. tests-only vs. throwaway-
+DB) is itself a good sign the boundary is being actively respected,
+not just remembered as a rule. A dry run confirmed 3,000 customers
+updating in place, 3,000 policies created, zero refusals; SC-003/
+SC-004 performance was independently verified at full 3,000-policy
+volume on the test database (single retrieve `0.276s`, filtered list
+`0.048s`, both comfortably under their bounds).
+
+### 4.6 Final verified state
+
+```
+669 passed, 0 failed, 99% coverage (1023 statements, 10 missed)
+```
+Independently re-confirmed via a fresh upload, not accepted on the
+completion summary alone — matching exactly. Customer's 22 audit
+tests separately re-confirmed passing (`22 passed, 0 failed`) after
+the `Http404` fix. 84 of 85 tasks complete (`T083`, the real dev-DB
+load, correctly left pending your explicit go-ahead). Committed as
+`321829e` (33 files, 6,511 insertions), pushed. Two scratch
+verification-output files were caught before commit and excluded via
+a new `.gitignore` pattern, keeping the same discipline from Phase
+2a's CSV-exposure catch.
 
 ---
 
@@ -351,4 +592,30 @@ command itself, not the implementation — corrected, and generalized
 into a new standing rule about scrutinizing verification tooling with
 the same rigor as the thing being verified. Final: 389/389 tests
 passing, 99% coverage, all 69 tasks complete. Committed as `06efda3`,
+pushed.
+
+**2026-08-10** — Phase 2b (Policy Management) complete. Spec/plan
+review found two genuinely sharp, independently-verified design
+decisions: live-scoped `(customer, policy_type)` uniqueness correctly
+identified as needing the *opposite* semantics from Customer's
+reference-reservation pattern, and an archived-customer FK-resolution
+bug caught before it could exist. Implementation surfaced three real
+bugs: a falsely-green baseline from a stale, never-rebuilt container
+image (coverage table was the tell, not the pass/fail line — now a
+new standing rule); an FR-015 message-contract violation from DRF's
+auto-generated `UniqueTogetherValidator` firing before the explicit
+check; and an FR-031 gap latent since Phase 2a (`Http404` not `NotFound`
+from `get_object_or_404`, undetected because Customer's own tests
+never exercised the unpermitted-user-plus-nonexistent-id case) —
+fixed in the shared handler with Customer's 22 audit tests re-confirmed
+passing afterward. The high-risk refusal-handler-to-registry refactor
+(flagged in its own plan as touching shipped, tested code) landed with
+a zero-line diff on the Customer audit test file. A real cross-session
+question — whether earlier Customer-phase verification was also
+against a stale image — was resolved directly using evidence available
+at review time (live Customer test IDs and real coverage numbers in
+that earlier output rule it out) rather than left open or guessed at.
+`T083` (the real dev-DB load) correctly deferred pending explicit
+approval, consistent with the 2a boundary. Final: 669/669 tests
+passing, 99% coverage, 84/85 tasks complete. Committed as `321829e`,
 pushed.
