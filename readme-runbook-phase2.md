@@ -39,6 +39,27 @@ and fixed pre-emptively.
 
 ## 2. Standing rules — carried forward from Phase 1, plus new ones from 2a
 
+### Pre-flight checklist — run at the start of every session, before any `/speckit-*` command
+
+```bash
+cd ~/insurance-ai-platform
+git status                          # confirm clean tree before starting new work
+docker compose build web            # rebuild BEFORE trusting any test run this
+                                     # session — see the stale-image rule below;
+                                     # this is the single cheapest insurance
+                                     # against a repeat of Phase 2b's false 389
+docker compose up -d
+docker compose ps                   # confirm all three healthy
+```
+Then inside Claude Code:
+```
+/status     # confirm Claude Pro account, not an API key
+/model      # confirm Opus for specify/plan, Sonnet for tasks/implement
+```
+Confirm `⏸ manual mode on`, not `⏵⏵ accept edits on` — check the
+bottom-of-screen indicator directly, don't assume it carried over from
+the last session.
+
 **From Phase 1** (still in force): pause before approving every write;
 verify real files/commands rather than trust completion summaries;
 check `/status` for Pro-vs-API-key billing at the start of every
@@ -75,10 +96,8 @@ that produced these):
   gotcha). The tell isn't the pass/fail line, which can look completely
   normal — it's the **coverage table**: new or changed modules showing
   as absent or unexpectedly low-coverage is the actual signal a stale
-  image is being tested instead of the real one. Worth a habit: after
-  any `/speckit-implement` session, confirm a `--build` has actually
-  happened before trusting a "baseline" pytest run, not just that one
-  was run.
+  image is being tested instead of the real one. This is now the first
+  step of the pre-flight checklist above, not left to memory.
 
 ---
 
