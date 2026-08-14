@@ -63,6 +63,22 @@ docker compose exec web python manage.py createsuperuser
 # prompts for email, role, password — role must be system_administrator
 ```
 
+Optionally, have the entrypoint bootstrap that account on boot instead, by
+setting both of these in `.env`:
+
+```bash
+DJANGO_SUPERUSER_EMAIL=you@example.com
+DJANGO_SUPERUSER_PASSWORD=<choose one>
+DJANGO_SUPERUSER_ROLE=system_administrator   # optional; this is the default
+```
+
+This is opt-in and idempotent: with no `DJANGO_SUPERUSER_PASSWORD` set the
+entrypoint creates no account at all, and if the email already exists it skips
+rather than failing. Useful because `docker compose down -v` destroys the
+volume — without it, the next boot comes up fully migrated but with zero users
+and no way into the API. Note that the password sits in `.env` in plaintext, so
+this is a local-development convenience, not a production pattern.
+
 Verify the platform is up:
 
 ```bash
