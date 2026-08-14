@@ -99,6 +99,23 @@ that produced these):
   image is being tested instead of the real one. This is now the first
   step of the pre-flight checklist above, not left to memory.
 
+**New, established during 2c's infrastructure incident (§5.3)**:
+
+- **Docker volume survival cannot be inferred from other volumes'
+  survival.** Seeing unrelated projects' volumes intact does not mean
+  *this* project's volume wasn't independently removed and recreated —
+  these are separate facts. Check the specific volume's own
+  `CreatedAt` timestamp directly (`docker volume inspect <name>`)
+  before offering any reassurance about data survival, every time.
+- **The `Server: Splunkd` / unexpected `303` anomaly, first seen in
+  Phase 1 and previously documented as "closed" (attributed to
+  unfixable host-network interference), was wrong.** The real cause:
+  a local `splunkd` process squatting on port 8000 whenever nothing
+  else has bound it first — not network-level interception at all.
+  If this resurfaces, check `lsof -i :8000` / `ss -tlnp` before
+  assuming it's the same "nothing we can do" situation — it was
+  always locally diagnosable and fixable via a simple port remap.
+
 ---
 
 ## 3. Phase 2a — Customer Management (complete)
@@ -581,10 +598,181 @@ a new `.gitignore` pattern, keeping the same discipline from Phase
 
 ---
 
-## 5. Phase 2c — Claims Management
+## 5. Phase 2c — Claims Management (spec + plan complete; implementation pending)
 
-⏳ PENDING — not yet started. Depends on 2b's `Policy` model (foreign
-key).
+### 5.1 What it delivers
+
+Real `Claim` model and CRUD API (`apps/claims/`), replacing Phase 1's
+placeholder. FK to `apps.policies.Policy`. Fields: `claim_status`
+(Approved/Denied/Filed), `claim_amount_usd`. Audit logging via the
+existing `audit_routes.py` registry — this sub-phase is the intended
+proof that Phase 2b's high-risk refactor actually paid off (a new
+consumer as a data-entry addition, not new refactor work).
+
+### 5.2 Spec review — a real dataset-modeling problem, found and resolved correctly
+
+Before writing began, a genuine data-modeling issue was surfaced and
+independently verified rather than assumed away: `Claim_Status`
+includes `"No Claim"` on 754 of 3,000 rows — the *absence* of a
+claim, not a claim with a status. Storing these as `Claim` rows would
+mean 754 records asserting a claim exists whose own status denies it,
+corrupting every downstream count for Phases 3-4. Resolved by
+representing absence as the absence of a record (`FR-004`/`FR-012`) —
+the load produces 2,246 real claims from 3,000 rows, and a skipped row
+is a legitimate, correctly-reported outcome, not a refusal.
+
+**A harder, genuinely ambiguous sub-problem surfaced within that**:
+390 of the 754 `"No Claim"` rows carry a **non-zero** claim amount —
+independently verified: min `$8.52`, max `$19,919.13` (the first
+figure offered, `$19,438.61`, was independently checked and found
+wrong by exact value, though it does correspond to a real row, ranked
+13th rather than highest — corrected before the spec was finalized).
+The chosen resolution — treat status as authoritative, don't fabricate
+390 claim events an authoritative field explicitly denies — is sound.
+**What makes this entry worth recording is what happened next**: the
+first proposal for handling this (log the discarded mismatches via
+`audit_routes.py`) was reconsidered and replaced with something
+better, for a real reason — `audit_routes.py` is a request-scoped
+refusal-auditing mechanism (prefix → role sets), with no request, path,
+or actor to key a load-time event on, and critically, an append-only
+audit log would accumulate a **fresh duplicate entry every single
+loader re-run**, inflating a future mismatch count by the number of
+loads rather than reflecting the true number of anomalous rows. The
+actual design (`FR-041`-`FR-048`, a dedicated, reconcilable
+load-anomaly record plus a separate immutable audit entry for
+permanent history) avoids both problems this project's own established
+philosophy this session would otherwise have walked into.
+
+**A further refinement, requested and correctly delivered**: whether a
+later load's *silence* about a previously-flagged row (the row simply
+no longer appearing) should count as the mismatch being resolved. The
+distinction matters — *"the conflict was neither observed to persist
+nor observed to be resolved, and the cause is unknown"* — and the spec
+now (`FR-044a`/`FR-044b`) explicitly forbids representing an
+absent-cleared anomaly as a *confirmed* correction anywhere queryable,
+and requires re-flagging it if the row later reappears still
+conflicting, rather than letting a single non-observing run
+permanently "win" against future evidence.
+
+Both spec and plan independently reviewed and verified via file
+upload (all dataset figures cross-checked against the real CSV a
+second time, both correct); committed as `241af14`, `.specify/
+feature.json` follow-up as a small separate commit.
+
+### 5.3 A significant infrastructure incident, mid-review — full account
+
+While reviewing Claims' `plan.md`/`research.md`, the baseline pytest
+check (part of the new pre-flight habit from §2) reported `web` as
+not running. What followed was a real, multi-stage infrastructure
+failure, not a routine restart — worth the full account, including a
+mistake made along the way, since this episode also resolves an
+open question from much earlier in this project.
+
+**Stage 1 — apparent total data loss.** `docker compose ps` and
+`docker volume ls` both returned completely empty — no containers, no
+volumes, for this project *or any other project on the machine*.
+
+**Stage 2 — a wrong diagnosis, corrected quickly.** The active Docker
+context was `default`; `desktop-linux` was assumed to be the "real"
+one and switched to — which then crashed with `"protocol not
+available"` and a Go-level segfault. This was **wrong**: `default` was
+actually correct all along, the empty results were caused by Docker
+Desktop itself being disconnected from WSL, not a context mismatch.
+Corrected once `docker ps -a` (the simplest possible check, tried
+after the more complex ones failed) showed real containers again
+after Docker Desktop was restarted from the Windows side.
+
+**Stage 3 — the actual root cause, uncovered by chance.** With
+containers back, `web` failed to bind port 8000: `"address already in
+use."` Direct investigation (`lsof -i :8000`) found the real
+occupant: **`splunkd`, a local security/monitoring process running as
+root on this exact machine, on this exact port.** This retroactively
+and definitively resolves the `Server: Splunkd` / `303 See Other`
+anomaly this project first hit in Phase 1 and had explicitly
+documented as **"closed"** — attributed at the time to unfixable
+host-network interception, unreachable from inside this project.
+**That conclusion was wrong.** It was never network-level
+interception; it was this literal local process squatting on the same
+port Django uses, every time something else wasn't already bound to
+it first. Fixed pragmatically by remapping the host port
+(`8000:8000` → `8001:8000` in `docker-compose.yml`) rather than
+touching `splunkd` itself, since it could plausibly be an IT-managed
+security agent and stopping it without knowing that for certain would
+have been the wrong call.
+
+**Stage 4 — real, confirmed data loss.** Once `web` could finally
+start, `customers_customer`/`policies_policy`/`audit_auditlog` all
+returned zero rows despite the schema being fully migrated. Checked
+`docker volume inspect insurance-ai-platform_postgres_data` directly:
+`CreatedAt: 2026-08-13T14:56:56-07:00` — **today**, during this
+exact incident, not the volume that had persisted since Phase 1.
+
+**A mistake made and corrected in real time, worth recording
+honestly**: on first seeing dozens of other unrelated project volumes
+still present on the machine, this was reasoned as *"nothing was
+purged"* and offered as reassurance that the data was probably intact.
+**That reasoning was wrong** — a single project's volume being
+recreated is entirely consistent with every *other* volume surviving
+untouched; the two facts don't actually connect the way the
+reassurance implied. The mistake was caught by checking the volume's
+own timestamp directly rather than trusting the inference, and
+corrected explicitly rather than left standing. This is the same
+"verify, don't trust — including your own reasoning" standard this
+runbook has held Claude Code to throughout §3-4, applied here to this
+document's own author instead.
+
+**Recovery — genuinely excellent, worth the same standard of praise
+as any other strong result in this project.** With explicit
+permission (the ask-first dev-database boundary from §2, working
+exactly as designed — the loader run and the subsequent superuser
+creation were each separately confirmed before proceeding), the
+recovery was executed and verified to an unusually high standard:
+- Pre-load state independently confirmed as genuinely zero (not
+  assumed from the report) before writing anything
+- Loader's self-reported counts (`3,000`/`3,000`/`0` refusals)
+  cross-checked against real `psql` queries, the CSV's own row count
+  (confirming nothing silently dropped), FK integrity (zero orphan
+  policies), and the audit log's actual entry count and shape
+- The restore verified through the **full stack**, not just the
+  database — a real authenticated API session, comparing `CL-00001`'s
+  complete field set (name, email, phone, age, gender, location,
+  policy type, both dates, premium, risk/renewal scores, fraud flag,
+  cross-sell score, lead source) directly against the source CSV row,
+  every field matching exactly
+- `accounts_user` correctly identified as still empty and *not*
+  silently populated — flagged as a real, structural gap (the
+  entrypoint never created a superuser, so this exact lockout would
+  recur on any future volume loss) rather than worked around ad hoc
+
+**The resulting fix** — an opt-in, idempotent superuser bootstrap
+added to `scripts/entrypoint.sh` — was itself independently verified
+before commit: the real diff read directly (not the summary alone),
+confirming the `${VAR:-}` defaults correctly prevent a `set -u`
+crash on an unset variable, the idempotency check correctly matches
+`UserManager._create_user`'s email-lowercasing behavior (tested
+explicitly with a mixed-case email), and the actual crash-loop
+scenario it prevents was empirically measured (`CommandError: Error:
+That email is already taken`, exit code 1, which under `set -euo
+pipefail` would abort the boot before `exec gunicorn`), not just
+theorized. The plaintext-password-in-`.env` limitation was disclosed
+unprompted, correctly scoped as local-dev-only.
+
+An unrelated manual change (`docker-compose.yml`'s port remap) was
+caught sitting in the same working tree and correctly identified
+before being folded into an accurate combined commit rather than
+either silently included with a misleading message or silently
+dropped.
+
+**Final state**: `insurance-ai-platform_postgres_data` now holds a
+freshly-restored, fully-verified `3,000`/`3,000` dataset (the
+audit-trail history accumulated across Phases 1-2b is genuinely and
+permanently lost — never committed to git, as it correctly shouldn't
+be, and only ever existed in the volume that was destroyed). Committed
+as `0c80ae3`.
+
+### 5.4 Implementation
+
+⏳ PENDING — not yet started.
 
 ---
 
@@ -638,3 +826,36 @@ that earlier output rule it out) rather than left open or guessed at.
 approval, consistent with the 2a boundary. Final: 669/669 tests
 passing, 99% coverage, 84/85 tasks complete. Committed as `321829e`,
 pushed.
+
+**2026-08-12 to 2026-08-14** — Phase 2c (Claims) spec and plan
+complete. Spec review caught a real dataset-modeling problem
+(`"No Claim"` status rows must not become fabricated Claim records)
+and a harder ambiguous sub-case (390 status/amount mismatches) —
+resolved with a design that improved on the first proposal after
+correctly identifying that an append-only audit log would inflate
+mismatch counts by the number of loader re-runs; refined further on
+request to distinguish "confirmed corrected" from "silently absent"
+so a future query can't conflate the two. Both dataset figures in the
+spec's Assumptions section independently re-verified against the raw
+CSV, one initially-wrong figure caught and corrected before finalizing.
+Mid-review, a significant infrastructure incident occurred: Docker
+Desktop's WSL connection broke, was misdiagnosed once (a Docker
+context switch, wrongly assumed to be the fix, that actually crashed)
+before being correctly resolved via a Docker Desktop restart; a real
+port conflict was then traced to a local `splunkd` process on port
+8000 - which retroactively and definitively corrects Phase 1's
+"closed" conclusion about the `Server: Splunkd` anomaly, which was
+never network interference at all. The project's Postgres volume was
+confirmed genuinely recreated (not just disconnected) via its own
+`CreatedAt` timestamp, after an incorrect reassurance ("other volumes
+survived, so probably nothing was purged") was offered and then
+self-corrected once actually checked - logged as a new standing rule
+alongside the real `splunkd` finding. Recovery was executed to a high
+standard: pre/post state independently verified at the database,
+CSV-source, and full-authenticated-API level (a real CL-00001
+field-by-field match against the source row), and a genuine structural
+gap (no superuser bootstrap existed, meaning any future volume loss
+would repeat the same lockout) was found and fixed with an opt-in,
+idempotent, empirically-tested entrypoint change rather than worked
+around ad hoc. Committed as `0c80ae3`. Claims implementation not yet
+started.
