@@ -20,7 +20,7 @@ each sub-phase actually happens.
 |---|---|---|
 | **2a — Customer Management** | ✅ Done | Phase 1 Foundation only |
 | **2b — Policy Management** | ✅ Done | 2a (Customer FK) |
-| 2c — Claims Management | ⏳ Not started | 2b (Policy FK) |
+| **2c — Claims Management** | ✅ Done | 2b (Policy FK) |
 
 Sequenced deliberately — Policy will hold a foreign key to Customer,
 Claims will hold one to Policy — so each sub-spec builds on real,
@@ -598,7 +598,7 @@ a new `.gitignore` pattern, keeping the same discipline from Phase
 
 ---
 
-## 5. Phase 2c — Claims Management (spec + plan complete; implementation pending)
+## 5. Phase 2c — Claims Management (complete)
 
 ### 5.1 What it delivers
 
@@ -770,13 +770,143 @@ permanently lost — never committed to git, as it correctly shouldn't
 be, and only ever existed in the volume that was destroyed). Committed
 as `0c80ae3`.
 
-### 5.4 Implementation
+### 5.4 Implementation — a genuinely excellent close, after two real interruptions worth documenting honestly
 
-⏳ PENDING — not yet started.
+**Two API-level interruptions occurred mid-session**, unrelated to the
+implementation itself — a 500-error mid-session (recovered cleanly by
+resuming with explicit confirmation of what had and hadn't landed
+before continuing, rather than restarting blind), and, separately, a
+recurrence of auto-approve mode being active at the start of a new
+session despite having been fixed before, caught and corrected before
+any writes happened under it.
+
+**Two genuine gaps slipped past completion summaries in this same
+implementation run, both caught by direct verification rather than
+trust**:
+1. **`T060`** (the single-line registry registration for Claims) was
+   reported as part of a larger batch of finished work on two separate
+   occasions without actually having happened — confirmed both times
+   via a direct, empty `git diff apps/core/audit_routes.py`, not
+   accepted from the summary. On the third attempt, genuinely done,
+   with the registry entry's own reasoning worth noting specifically:
+   *"an Underwriter may WRITE policies but may not READ claims, so
+   their 404 on a claim is a REFUSAL while the same user's 404 on a
+   policy is an ordinary miss. Only per-module role sets can tell
+   those apart"* — the exact subtlety the whole registry design exists
+   to capture, stated as the reason this entry needed care, not left
+   implicit.
+2. **A load approved but never executed.** `"yes, go ahead and run the
+   load"` was sent and accepted, but the dev database still showed
+   `0` claims and `0` anomalies afterward. Traced directly:
+   `docker compose logs web` showed only migration output, no trace
+   of the load itself — confirming the command genuinely never ran,
+   not that it ran and failed silently. Re-issued explicitly, and this
+   time genuinely executed.
+
+**Once actually run, this load is the best-verified single result in
+the entire project — worth real, specific praise.** Every number was
+independently *derived* from the raw CSV rather than trusted from the
+spec (`source rows: 3000 | No Claim: 754 | ...amount≠0: 390 |
+...amount=0: 364`, cross-checked against a real checksum:
+`2246 + 364 + 390 = 3000`), confirmed against the live database rather
+than the command's own self-report, and — critically — **idempotency
+was empirically demonstrated, not asserted**: the load was run a
+*second* time and the audit trail was inspected directly, showing
+`claim_anomaly.recorded` staying at exactly `390` rather than doubling
+to `780` — *"Had anomalies lived in the append-only log instead of a
+reconciled table, this would now read 780 and a Phase 4 count would be
+wrong by the number of times the loader had run. That was the
+design's central argument, now demonstrated rather than asserted."*
+This directly closes the loop on the reasoning first worked through
+during spec review (§5.2) — a design decision that was sound on paper
+now has a real, repeatable proof behind it.
+
+**The registry investment's payoff, proven with a literal byte-level
+diff.** *"`exception_handlers.py` byte-identical to the T003 baseline
+(`2d3d84dc`), the entire refusal-auditing change being one 37-line
+`register()` block."* This is the concrete answer to the question this
+whole sub-phase was partly designed to test: did Phase 2b's
+high-risk, shipped-code-touching refactor actually pay off as
+intended, or would Claims need its own workaround. It held, exactly
+as designed, provable rather than just claimed.
+
+**One design question surfaced and resolved deliberately, not
+defaulted**: whether the source CSV should be baked into the Docker
+image (via `COPY . /app`) or kept out entirely. Resolved correctly —
+excluded from the image via `.dockerignore`, reachable only through a
+read-only runtime bind mount (`./data:/app/data:ro`) instead,
+consistent with this project's established caution about that
+specific file's exposure. One real gap in the first implementation
+(the `.dockerignore` comment described a mount that didn't yet exist
+in `docker-compose.yml`) was caught by direct verification before
+being trusted, then genuinely fixed.
+
+**Two real regressions in *other* apps' tests, found and correctly
+diagnosed as stale tests, not defects**: `test_audit_routes.py` used
+`/api/claims/1/` as its example of an *unregistered* path — true in
+Phase 2b, false now that Claims is registered; fixed by swapping the
+example to an actually-still-unregistered path. `test_loaddataset.py`'s
+cleanup logic started raising `ProtectedError` once policies could
+carry claims — correctly identified as `FR-009`'s `PROTECT` constraint
+working exactly as specified, not a bug, and fixed by reordering the
+cleanup to respect the new dependency chain.
+
+**Final verified state**, independently confirmed via direct
+database and full-suite queries, not accepted from the completion
+summary:
+```
+customers: 3000  policies: 3000  claims: 2246  anomalies: 390
+842 passed, 0 failed, 99% coverage
+```
+All 74 tasks complete. Committed as `a947a9f` (23 files, 3,788
+insertions), pushed.
 
 ---
 
-## 6. Progress log
+## 6. Phase 2 — complete
+
+**Customer, Policy, and Claims are all real** — three full CRUD
+modules, replacing every Phase 1 placeholder, sharing one RBAC
+mechanism, one audit-refusal registry, one archival pattern, and one
+CSV-driven seed loader across all three. 228 tasks total across the
+three sub-specs (69 + 85 + 74), all complete, all independently
+verified rather than taken on any single completion summary's word.
+
+**Six real, distinct bugs found across this phase**, every one of
+them only surfacing through actual execution — a real request, a real
+cascade, a real re-run, a real infrastructure failure — never through
+however-careful a static read:
+1. A DRF permission-dispatch ordering bug (2a) — `has_permission`
+   blocking a detail-route request before `has_object_permission`'s
+   404 logic could ever run
+2. An audit-trigger/`SET_NULL`-cascade interaction bug (2a) — two
+   independently-correct mechanisms, never tested together
+3. An unbounded-hang database timeout bug (2a, technically found
+   during US4 but part of the same overall project arc)
+4. A stale-container-image false-positive baseline (2b) — a clean
+   `389`-passing run against code that didn't exist in the image
+5. An `FR-015` validator-ordering bug and an `FR-031` gap latent since
+   2a (`Http404` vs. `NotFound`) — both found and fixed in 2b
+6. Two stale-test regressions correctly diagnosed as the *system*
+   working as specified, not as bugs (2c)
+
+**One genuine infrastructure crisis, fully resolved and honestly
+documented** — a Docker Desktop connectivity failure that led to real
+data loss, one incorrect reassurance caught and corrected in real
+time, and a definitive retroactive correction to a much older,
+previously "closed" conclusion (`Server: Splunkd` was never network
+interference — a local process on this machine, the whole time).
+
+**The throughline holds across all three sub-phases**: static review,
+however careful, keeps finding real limits. Only actually running the
+system — against a real database, a real cascade, a real re-run, a
+real infrastructure failure — has ever been sufficient to prove
+something works. That was true in Phase 1, and every one of Phase 2's
+six bugs confirms it again.
+
+---
+
+## 7. Progress log
 
 **2026-08-06** — Phase 2a (Customer Management) complete. Real spec
 review caught a live pre-existing repo risk (ungitignored source CSV)
@@ -859,3 +989,33 @@ would repeat the same lockout) was found and fixed with an opt-in,
 idempotent, empirically-tested entrypoint change rather than worked
 around ad hoc. Committed as `0c80ae3`. Claims implementation not yet
 started.
+
+**2026-08-15 — Phase 2 complete.** Claims implementation finished, 74
+tasks. Two real interruptions along the way: an unrelated API 500
+error mid-session (recovered by confirming actual state before
+resuming, not restarting blind), and auto-approve mode recurring at a
+new session's start (caught and fixed before any writes happened
+under it). Two genuine gaps slipped past completion summaries within
+this same run before being caught by direct verification: `T060`
+(registry registration) reported done twice without having happened,
+confirmed both times via an empty `git diff`; a dataset load reported
+as executed that had, per `docker compose logs`, never actually run.
+Once genuinely executed, the load became the best-verified single
+result in the project - every figure independently derived from the
+raw CSV with a real checksum, and idempotency empirically proven (not
+asserted) via a real second run showing the anomaly audit count held
+at 390 rather than doubling. The Phase 2b registry investment's payoff
+was proven with a literal byte-identical diff on `exception_handlers.py`
+- the entire Claims audit integration was one 37-line addition, exactly
+as designed. A real design question (bake the CSV into the Docker
+image or mount it at runtime) was resolved correctly - excluded from
+the image, reachable only via a read-only bind mount - after one
+implementation gap in that fix was caught and corrected. Two
+regressions in unrelated apps' tests were correctly diagnosed as stale
+tests reacting to the system now working as specified, not as bugs.
+Final: customers 3000, policies 3000, claims 2246, anomalies 390,
+842/842 tests passing, 99% coverage. Committed as `a947a9f`, pushed.
+**Phase 2 (Core Domain) is fully complete** - Customer, Policy, and
+Claims all real, 228 tasks total across three sub-specs, six real bugs
+found across the whole phase, one full infrastructure crisis
+encountered and honestly resolved along the way.
