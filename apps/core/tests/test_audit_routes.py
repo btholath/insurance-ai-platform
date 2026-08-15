@@ -25,8 +25,13 @@ def test_unregistered_path_matches_nothing():
     The precondition for FR-032 at the registry layer: a path no module
     claims produces no entry at all, rather than falling back to some
     default module and mislabelling the target type.
+
+    This used /api/claims/1/ as its unregistered example until Phase 2c
+    registered claims as the registry's third consumer. The example was
+    swapped rather than the assertion weakened -- the guarantee under test
+    is unchanged, only the set of paths that demonstrate it.
     """
-    assert audit_routes.match("/api/claims/1/") is None
+    assert audit_routes.match("/api/risk/1/") is None
     assert audit_routes.match("/health/") is None
     assert audit_routes.match("/") is None
 

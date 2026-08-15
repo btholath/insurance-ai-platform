@@ -24,6 +24,7 @@ from django.core.management import CommandError, call_command
 from django.utils import timezone
 
 from apps.audit.models import AuditLog
+from apps.claims.models import Claim, ClaimLoadAnomaly
 from apps.customers.models import Customer
 from apps.policies.models import Policy
 
@@ -433,6 +434,13 @@ def test_alias_produces_identical_output_to_loaddataset(tmp_path, capsys):
     call_command("loaddataset", path)
     via_loaddataset = capsys.readouterr().out
 
+    # Claims and anomalies must go first: both hold a PROTECT reference to
+    # Policy (FR-009 in spec 004), so deleting policies out from under them
+    # raises ProtectedError. That protection is the point -- no claim may
+    # be left referring to a policy that no longer exists -- so the reset
+    # follows the dependency order rather than working around it.
+    ClaimLoadAnomaly.objects.all().delete()
+    Claim.all_objects.all().delete()
     Policy.all_objects.all().delete()
     Customer.all_objects.all().delete()
 

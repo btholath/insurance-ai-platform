@@ -1,7 +1,12 @@
-from django.urls import path
+from rest_framework.routers import DefaultRouter
 
-from .views import PlaceholderView
+from .views import ClaimLoadAnomalyViewSet, ClaimViewSet
 
-urlpatterns = [
-    path("placeholder/", PlaceholderView.as_view(), name="claims-placeholder"),
-]
+# The anomalies route is registered FIRST. DefaultRouter matches in
+# registration order, and the claim detail pattern (r"^(?P<pk>[^/.]+)/$")
+# would otherwise swallow "anomalies/" as a claim id.
+router = DefaultRouter()
+router.register("anomalies", ClaimLoadAnomalyViewSet, basename="claim-anomaly")
+router.register("", ClaimViewSet, basename="claim")
+
+urlpatterns = router.urls

@@ -38,6 +38,13 @@ INSTALLED_APPS = [
     "apps.claims",
 ]
 
+# ClaimLoadAnomaly.policy is a ForeignKey(unique=True) rather than a
+# OneToOneField, deliberately: the DB constraint is identical, but the
+# plural reverse accessor stays a queryset, so relaxing the one-per-policy
+# rule for a future export is a migration rather than an API change for
+# every caller. See apps/claims/models.py.
+SILENCED_SYSTEM_CHECKS = ["fields.W342"]
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",

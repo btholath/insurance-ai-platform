@@ -1,0 +1,38 @@
+.git/
+.gitignore
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+
+.env
+.env.*
+!.env.example
+
+# The source dataset never enters the image. It is real insurance PII,
+# gitignored, and both specs commit to it being "supplied at run time; not
+# committed" — plan.md names "Source CSV stays out of the repository" as a
+# constraint. It reaches the container through the read-only bind mount in
+# docker-compose.yml instead, so it is present when mounted and absent
+# from every image layer.
+data/
+specs/
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.log
+*.tmp

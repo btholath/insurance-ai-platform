@@ -140,3 +140,40 @@ def register_defaults():
             write_roles=(Role.UNDERWRITER, Role.SYSTEM_ADMINISTRATOR),
         )
     )
+
+    register(
+        AuditedRoute(
+            prefix="/api/claims/",
+            target_type="claims.Claim",
+            action_prefix="claim",
+            # FIVE view roles -- the narrowest read set of the three
+            # modules, against Customer's seven and Policy's eight. Claim
+            # amounts are financial detail about an individual, so
+            # product- and sales-facing roles are excluded entirely:
+            # Customer Service, Underwriter, Product Manager and Executive
+            # Leadership have no record-level claim access.
+            #
+            # The sharp case this entry exists to get right: an
+            # Underwriter may WRITE policies but may not READ claims, so
+            # their 404 on a claim is a REFUSAL while the same user's 404
+            # on a policy is an ordinary miss. Only per-module role sets
+            # can tell those apart.
+            view_roles=(
+                Role.CLAIMS_ADJUSTER,
+                Role.FRAUD_ANALYST,
+                Role.COMPLIANCE_OFFICER,
+                Role.RISK_MANAGER,
+                Role.SYSTEM_ADMINISTRATOR,
+            ),
+            # Two write roles -- a third distinct write set, after
+            # Customer's (Customer Service) and Policy's (Underwriter). A
+            # Fraud Analyst investigates claims but does not adjudicate
+            # them, so they read without writing.
+            write_roles=(Role.CLAIMS_ADJUSTER, Role.SYSTEM_ADMINISTRATOR),
+        )
+    )
+    # The anomaly routes at /api/claims/anomalies/ need NO second entry:
+    # match() selects the longest matching prefix, they are nested under
+    # this one, and they share its role sets exactly (FR-047). If anomalies
+    # ever diverge in roles, a second entry is the mechanism -- that is the
+    # registry working as designed, not a workaround.

@@ -7,6 +7,12 @@ services:
       - .env
     ports:
       - "8001:8000"
+    volumes:
+      # The source dataset is supplied at run time, never baked into the
+      # image (see .dockerignore). Read-only: the loader only ever reads
+      # it, and a writable mount would let a bug in a management command
+      # corrupt the one copy of the source data.
+      - ./data:/app/data:ro
     depends_on:
       db:
         condition: service_healthy
