@@ -8,10 +8,15 @@ services:
     ports:
       - "8001:8000"
     volumes:
+      # Source bind-mount for development: the container sees edits without
+      # a rebuild. The image still COPYs the source, so this mount only
+      # shadows it -- a deploy from the image alone remains self-contained.
+      - .:/app
       # The source dataset is supplied at run time, never baked into the
       # image (see .dockerignore). Read-only: the loader only ever reads
       # it, and a writable mount would let a bug in a management command
-      # corrupt the one copy of the source data.
+      # corrupt the one copy of the source data. Declared AFTER the source
+      # mount so it stays read-only rather than inheriting ./data from it.
       - ./data:/app/data:ro
     depends_on:
       db:

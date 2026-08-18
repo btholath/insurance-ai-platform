@@ -212,7 +212,7 @@ stored assessment pointless).
 
 ## §5. The rule set — five factors, four tiers, validated against 3,000 rows
 
-**Decision**: Five factors summing to a maximum of 100 points, four tiers. The
+**Decision**: Five factors summing to a maximum of 90 points, four tiers. The
 full table lives in `apps/risk/rules.py` as one declarative structure serving both
 the computation and the explanation (FR-003), stamped `RULE_SET_VERSION = "1.0.0"`
 (FR-004).
@@ -244,9 +244,32 @@ over all 3,000 customers:
  4 High     |   531 | 17.7 |  60 |  90
 ```
 
-Every tier clears SC-005's 5% floor. Observed range 0–90 of a possible 100, so
-the scale is exercised without saturating. This is why SC-005 was written as an
-achievable criterion rather than an aspiration.
+Every tier clears SC-005's 5% floor. Observed range 0–90 of a possible 90 — the
+top of the scale is reachable and was reached, so the scale is exercised end to
+end. This is why SC-005 was written as an achievable criterion rather than an
+aspiration.
+
+**On the 90-point scale** (corrected 2026-08-18): an earlier revision of this
+section said "a maximum of 100 points" and "0–90 of a possible 100". The table
+above has always summed to 90 (15 + 15 + 20 + 30 + 10), and the simulation was
+run against that table — the observed maximum of exactly 90 is what a 90-point
+rule set produces. The "100" was an arithmetic slip in the prose, never a
+property of the rule set, and no point value has been changed to correct it. The
+0–100 figures in `data-model.md` and `plan.md` describe the **storage envelope**
+— the `risk_score_range` DB constraint and the `score / 100` mirror — which is an
+outer bound that a 0–90 rule set satisfies, not a target it must reach. FR-005
+requires a *stated* scale with a defined maximum; it does not name 100. The
+stated maximum is **90**.
+
+**If the scale is ever moved to 100**, the extra 10 points belong on
+`claims_history` (20 → 30), matching `claims_ratio`'s 30: both describe claiming
+behaviour, it is the factor with the most evidentiary support in this section
+(the 1,143 zero-amount claims), and it avoids inflating `age`, the factor sitting
+nearest the protected-characteristic exclusions of FR-017. That change would bump
+`RULE_SET_VERSION` to 1.1.0 per FR-004 and **require re-running this entire
+3,000-row simulation** — every tier count, percentage, and min/max above is a
+measurement of the 90-point table and would not survive a change to any point
+value.
 
 **Multiple policies** (FR-008): the seeded export has exactly one policy per
 customer (verified: `policies_per_customer = 1` for all 3,000), but the model

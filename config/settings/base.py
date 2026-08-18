@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.customers",
     "apps.policies",
     "apps.claims",
+    "apps.risk",
 ]
 
 # ClaimLoadAnomaly.policy is a ForeignKey(unique=True) rather than a
