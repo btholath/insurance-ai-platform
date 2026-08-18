@@ -1,0 +1,335 @@
+# Runbook — Phase 3 (Risk Engine)
+
+**Companion to `readme-runbook-phase1.md`** (Spec Kit methodology, the
+beginner glossary, the full `/speckit-*` workflow explanation) and
+`readme-runbook-phase2.md` (the Core Domain phase — Customer, Policy,
+Claims — including six real bugs and a full infrastructure-loss
+incident). This document assumes both and focuses on what's specific
+to Phase 3.
+
+**Living document**, same convention as Phases 1-2 — sections marked
+`⏳ PENDING` are placeholders, filled in with real content as each
+sub-phase actually happens.
+
+---
+
+## 1. Scope and sequencing
+
+| Sub-phase | Status | Depends on |
+|---|---|---|
+| **3a — Risk Scoring Engine** | 🔄 In progress | Phase 2 (Customer/Policy/Claims all real) |
+| 3b — Automatic Recompute (Celery) | ⏳ Not started | 3a |
+
+Split deliberately, mirroring Phase 2's Customer→Policy→Claims
+sequencing logic: get the scoring domain logic solid and fully tested
+**on-demand only** first, then layer the harder infrastructure
+question (introducing Celery for the first time — Redis has sat
+provisioned-but-unused since Phase 1's Foundational plan explicitly
+deferred it) on top of something already proven, rather than
+debugging both at once.
+
+**Scope decided before writing began**, via explicit questions rather
+than defaulted: the score is a **tiered/thresholded rules engine**,
+not a black-box calculation; it's exposed via a **dedicated
+explainability endpoint** (`GET /api/customers/{id}/risk-assessment/`),
+not just an updated field; and recompute is **on-demand only** in 3a
+(a management command / explicit API trigger) — no signals, no Celery,
+no automatic triggering on data changes until 3b.
+
+---
+
+## 2. Standing rules — carried forward from Phases 1-2, plus new ones from 3a
+
+### Pre-flight checklist — run at the start of every session, before any `/speckit-*` command
+
+```bash
+cd ~/insurance-ai-platform
+git status
+docker compose build web
+docker compose up -d
+docker compose ps
+docker compose exec web pytest apps/ tests/ -v --cov-report=term-missing 2>&1 | tail -10
+```
+Then inside Claude Code:
+```
+/status
+/model
+```
+Confirm `⏸ manual mode on`. **New for 3a**: also check `/config` for
+`"Use auto mode during plan"` — see below, this is a real, separate
+risk from the manual/auto toggle already checked.
+
+**From Phase 1** (still in force): pause before approving every
+write; verify real files/commands rather than trust completion
+summaries; confirm manual/pause mode before starting work.
+
+**From Phase 2**: a passing test run proves nothing if the container
+image is stale — verify via the coverage table, not the pass line. A
+Docker volume's survival can't be inferred from other volumes'
+survival — check its own `CreatedAt` timestamp directly. The
+`Server: Splunkd` anomaly was a local process on port 8000, not
+network interference — if it recurs, check `lsof -i :8000` first.
+
+**New, established during 3a**:
+
+- **A Claude Code settings entry — `"Use auto mode during plan"`
+  (visible via `/config`) — auto-approves writes during
+  plan-classified operations regardless of the overall manual/auto
+  mode toggle shown in the status bar.** This is a real, separate risk
+  from the `⏸ manual mode on` / `⏵⏵ accept edits on` toggle already
+  tracked — the status bar can correctly show manual mode active for
+  the *session*, while this setting silently lets *plan-classified*
+  writes (which `/speckit-specify`/`/speckit-plan` writes plausibly
+  fall under) through without an actual pause. Check `/config` and
+  turn this off, or at minimum know it's on, before trusting that a
+  spec/plan write was actually reviewed rather than auto-approved.
+- **A brand-new "Set up auto mode" onboarding prompt can appear
+  mid-session** (distinct from the setting above) and, if accepted or
+  even just navigated past carelessly, can flip the status bar
+  straight to `⏵⏵ auto mode on`. If this prompt appears, select
+  **"Not now"** — not "Don't show again" — so the option to
+  reconsider later stays available without silencing something worth
+  revisiting once the project is in a calmer state. Then immediately
+  `shift+tab` to confirm manual mode is genuinely restored.
+- **Verify a claimed instruction or premise before acting on it — a
+  discipline that applies to instructions from either side of the
+  conversation, not only to completion summaries.** During 3a, an
+  instruction stating "FR-005 confirms the scale is 0-100" was
+  **wrong** — the actual spec text only requires a fixed, stated,
+  bounded scale, no specific number. Claude Code correctly asked to
+  re-read the spec before editing anything on that premise, catching
+  the error before a costly, unnecessary fix (raising a point value,
+  invalidating the entire 3,000-row validation) was applied to satisfy
+  a mistaken instruction. Worth remembering symmetrically: the "verify
+  before trusting" standard protects against bad instructions, not
+  only bad summaries.
+- **A live source bind-mount (`.:/app`) was added to `docker-compose.yml`
+  in 3a**, likely closing the Phase 2b stale-image failure class
+  permanently — code edits are now visible to the running container
+  immediately, without a rebuild. This changes what `docker compose
+  build web` actually verifies going forward: no longer primarily "is
+  the container seeing current code" (the mount already guarantees
+  that), but "does the deployable image itself match" — relevant for
+  dependency changes (`pyproject.toml`) or confirming what would ship
+  if deployed standalone. The image still `COPY`s the source
+  independently, so a deploy from the image alone remains
+  self-contained; the mount only shadows it in dev.
+
+---
+
+## 3. Phase 3a — Risk Scoring Engine (in progress)
+
+### 3.1 What it delivers
+
+A rules-based risk scoring system for `Customer`, replacing the
+currently-unused, storage-only `risk_score` field established in
+Phase 2a. The first phase where **constitution Principle IV
+(Explainable AI Outputs)** actually applies — Phase 1's plan
+explicitly marked it N/A, since no AI/scoring surface existed until
+now. Every score is a tiered result from a declarative, pure-function
+rule table (`apps/risk/rules.py`), explainable via a dedicated
+read endpoint, computed on-demand only in this sub-phase.
+
+### 3.2 Spec review — real evidentiary rigor, including two ethically-aware decisions
+
+Before writing began, every candidate scoring factor was checked
+against the real 3,000-customer seeded database, not assumed usable:
+
+- **`gender` excluded on both statistical and ethical grounds** —
+  near-uniform distribution (no discriminatory power) **and**
+  explicitly disqualified as a protected characteristic regardless of
+  what the statistics showed. The ordering matters: this wasn't
+  "we measured it and it happened to be useless," it was "this must
+  never be used, independent of measurement." Independently verified
+  against the raw CSV: `1,042/998/960` — genuinely near-uniform.
+- **The existing `risk_score` field (from the Phase 0 CSV / Phase 2a
+  storage) was proven to be noise before being replaced, not just
+  asserted useless.** Independently verified: only 91 distinct values
+  across 3,000 rows, near-zero correlation with age (`0.0018`) and
+  premium (`0.0179`), and a flat mean across all three fraud-flag
+  bands (`~0.54` regardless of Low/Medium/High). `FR-055` cites this
+  evidence directly rather than a bare assertion.
+- **Zero-amount claims (1,143 of 2,246 real claims) correctly
+  identified as needing their own distinct treatment** — not "no
+  claim," not "a claim of substance." Independently verified count
+  matches exactly.
+- **A tier-distribution simulation was run in SQL against all 3,000
+  real customers before committing to SC-005's "every tier holds
+  ≥5%" claim** — `33.4%/32.0%/16.9%/17.7%`, proving the success
+  criterion achievable before it became a testable commitment, not
+  after.
+- **A deliberate explainability design choice**: `FR-021` requires
+  factor contributions to sum exactly to the total score (a testable
+  mathematical invariant), and `FR-024` requires explanations to come
+  from a *persisted* factor record at computation time, never
+  reconstructed later from possibly-since-changed data. This mirrors
+  the same "don't let history be reconstructed from present-day data"
+  principle behind Phase 1's `actor_role` audit snapshot and Claims'
+  corrected-vs-absent anomaly distinction.
+- **A staleness-disclosure judgment call, flagged explicitly rather
+  than silently decided**: since scoring is on-demand-only in 3a, a
+  stored score can go stale as underlying Policy/Claims data changes.
+  Rather than sweep this under the rug, User Story 5 and `FR-038`-
+  `FR-040` were built to *disclose* staleness rather than let it
+  become an undisclosed defect — offered as a trimmable option, not
+  forced. **Kept, deliberately** — trimming it would have left a real
+  gap in the same explainability guarantee `FR-021`/`FR-024` were
+  built to provide from the other side.
+
+### 3.3 Analyze findings — one constitutional-weight bug caught before any code existed
+
+Three findings reviewed in full before approving any remediation,
+same discipline as every prior `/speckit-analyze` pass this project:
+
+**D1 (HIGH, constitutional)** — the sole write path for scores
+(`engine.persist()`) was scheduled for `T033` (Phase 3, User Story 1),
+but the `record_action` audit call for that same write was scheduled
+eight phases later, at `T078` (Phase 8, User Story 4). Between those
+two points, every real score computation would have written risk data
+with **no audit entry** — a direct violation of constitution
+Principle II. The finding's own sharpest observation: `tasks.md`'s own
+Phase 4 checkpoint claimed *"US1 + US6 together are the minimum
+defensible increment"* — a claim the gap itself made false. **Fixed**:
+`record_action` moved into `T033`'s existing `transaction.atomic()`
+block (which `FR-053` already required it to share); `T078` retargeted
+from *introducing* the audit write to *verifying* it; the checkpoint
+claim corrected to state plainly that all three principles hold at
+that point, not overstated.
+
+**C1 (MEDIUM)** — `SC-005`'s tier-distribution claim ("every tier
+holds ≥5%") had no automated assertion, reachable only via a manual
+quickstart step. *"A rule change that collapsed 90% of customers into
+one tier would pass every automated test in the suite."* **Fixed**: a
+dedicated distribution assertion added to `T058`.
+
+**C2 (MEDIUM, treated as higher-stakes than its label)** — `FR-017`
+(forbidding gender/location as scoring factors) had zero task
+coverage — a `grep` for the excluded fields across all 99 tasks
+returned nothing. *"Nothing prevents a later contributor adding a
+gender band... the real reason [gender is excluded] is that it
+shouldn't be there at all."* **Fixed**, per explicit instruction to
+use hard equality rather than a mere absence check: `T011a`, a
+standalone task asserting `set(rules.FACTORS) ==` the exact five
+approved factors — catching both an unapproved addition *and* a
+silent removal (explicitly protecting `claims_ratio`, named as "the
+most discriminating factor," from being silently dropped later).
+
+All three remediations verified directly in the real `tasks.md` file
+after being applied, not accepted from the completion summary.
+Task count: 99 → 100. Committed as `8f1f8b4` (spec, plan, research,
+data-model, tasks, contracts, checklists — no application code).
+
+### 3.4 Implementation — a real interruption, a real bug found and correctly resolved, and a real infrastructure fix
+
+**The implementation session was interrupted mid-flight** by an
+unrelated API 500 error, and separately hit real turbulence: a
+"Set up auto mode" onboarding prompt appeared and was correctly
+declined ("Not now," not "Don't show again"); the session's own recap
+mechanism twice surfaced a stale, unrelated Phase 2b summary,
+correctly identified as stale by cross-checking against real
+`git status` output rather than trusted. When work resumed,
+`apps/risk/` was found genuinely mid-scaffold — every test file empty
+except `test_rules.py` (already written), and `rules.py` itself
+missing entirely, explaining a collection error that had briefly been
+mis-attributed to a stale-container-image question (the same category
+of issue from Phase 2b, but not what was actually happening this
+time — confirmed by checking the real file state directly rather than
+re-investigating the old, already-resolved question).
+
+**A real, self-caught arithmetic error, correctly root-caused and
+correctly *not* over-corrected.** While verifying `rules.py`, the
+band-point maxima were found to sum to `90` (`15+15+20+30+10`), while
+two docstrings claimed `100`. This was flagged as a genuine spec
+question, not resolved unilaterally. **A wrong instruction from this
+runbook's own author was caught in the process**: told "FR-005
+confirms the scale is 0-100," Claude Code correctly declined to act on
+that without re-reading the actual spec text first — and FR-005, read
+directly, only requires a fixed, stated, bounded scale, no specific
+number mandated. The error was owned and corrected in the same
+message it was caught in, not left standing.
+
+With the premise corrected, the actual fix was properly scoped: the
+**real, working, independently-verified table sums to 90** — so `90`
+is the true scale, and the two wrong docstrings were fixed to match
+the code, not the other way around. The alternative (raising a factor
+value to reach a true 100) was correctly identified as carrying real,
+unwarranted cost — invalidating the entire 3,000-row validation, every
+number in the tier-distribution table, and requiring a `RULE_SET_VERSION`
+bump per `FR-004` — *"a real behavioral change bought to satisfy a
+typo."* Fixed: `research.md` §5 (two lines), `rules.py`'s module and
+`max_score()` docstrings, and `TIER_BANDS`' comment (left at 100 to
+match the DB constraint, explicitly noted as inert headroom rather
+than a real gap). No point value changed. `RULE_SET_VERSION` stays
+`1.0.0`. The 3,000-row validation stands as originally measured.
+
+**One consequence correctly caught in a second pass**: `T011`'s own
+test-score list still included `100` as if it were a real,
+reachable value, when it's now known-unreachable under the corrected
+scale. Amended to include both `90` (the real reachable maximum) and
+`100` (the DB constraint envelope), with each labeled for *why* it's
+in the list — and, on top of the literal request, a self-updating
+assertion (`tier_for(max_score()) == "high"`) rather than a hardcoded
+`90`, so the test tracks the table automatically if the scale ever
+does move in the future via the recorded `claims_history` 20→30 path.
+
+**A second self-caught gap, one level deeper**: the *original* test
+that surfaced this whole discrepancy (`test_max_score_is_the_sum_of_
+every_factor_maximum`) still hardcoded `== 100` after everything else
+was fixed — the one place the bug started was the one place not yet
+corrected. Caught by actually re-running the test suite rather than
+assuming the fix was complete once the code and docs agreed
+(`1 failed, 52 passed`, then fixed and re-verified to `54 passed`).
+
+**Final state as of this entry**: `apps/risk/rules.py` (the band
+table, tier logic, `max_score()`) is done, verified, `54/54` tests
+passing. Everything else in `apps/risk/` — models, serializers, views,
+the engine itself, permissions, audit integration, the `computerisk`
+management command, staleness handling — confirmed still empty stubs,
+genuinely all of `T012` onward still ahead. Committed as `e1f15bd`
+(22 files: the full `apps/risk/` scaffold, `config/settings/base.py`,
+`config/urls.py` registering `/api/risk/` as a **top-level** prefix
+— deliberately not nested under `/api/customers/`, to avoid
+misattribution in the `audit_routes.py` registry — and the
+`docker-compose.yml` bind-mount change documented in §2).
+
+### 3.5 Remaining implementation
+
+⏳ PENDING — `T012` onward, roughly 88 of 100 tasks.
+
+---
+
+## 4. Progress log
+
+**2026-08-17 to 2026-08-18** — Phase 3a spec, plan, and analyze
+remediation complete; implementation started and partially complete.
+Spec review verified extensive evidentiary rigor: gender excluded on
+both statistical and ethical grounds, the existing `risk_score` field
+proven to be noise before replacement (not just asserted), a tier-
+distribution simulation run against real data before committing to
+SC-005, and a deliberate staleness-disclosure design kept after
+explicit consideration rather than trimmed for convenience. Analyze
+caught a real constitutional-weight bug (D1: the audit write for
+score computation was scheduled eight phases after the write path it
+needed to cover) plus two MEDIUM findings, one of which (C2, the
+gender/location exclusion) was treated with more care than its label
+implied given its regulatory weight — fixed with a hard equality
+assertion on the exact factor set, not just an absence check.
+Implementation hit a real interruption (an API error, a stale recap,
+an auto-mode onboarding prompt correctly declined) and resumed to find
+`apps/risk/` genuinely mid-scaffold. A real arithmetic error (band
+maxima summing to 90, not the 100 claimed in two docstrings) was
+found, correctly investigated as a spec question rather than resolved
+unilaterally - and a wrong instruction from this runbook's own author,
+claiming FR-005 mandated 100, was caught and corrected before it could
+cause an unwarranted, costly fix. Corrected the documentation to match
+the verified-working code; left all point values, `RULE_SET_VERSION`,
+and the existing 3,000-row validation untouched. A second, deeper gap
+(the originating test itself still hardcoding 100) was caught by
+actually re-running the suite, not assumed fixed once the docs agreed
+with the code. A live source bind-mount was added to `docker-compose.yml`,
+likely closing the Phase 2b stale-image failure class permanently.
+`rules.py` and its full test file are done and committed (`e1f15bd`,
+54/54 tests); the remaining ~88 tasks are still ahead. Stopped
+deliberately at this point given session length, with the
+highest-risk file safely committed rather than left exposed in the
+working tree.
