@@ -35,7 +35,11 @@ _CUSTOMER_FIELDS = [
     "updated_at",
 ]
 
-_READ_ONLY = ["id", "created_at", "updated_at"]
+# risk_score is read-only (FR-056; Phase 3a data-model.md): the risk
+# engine is the sole writer now, mirroring RiskAssessment.score. An API
+# client setting it directly would create a score with no assessment and
+# no explanation -- a black-box score, which Principle IV forbids.
+_READ_ONLY = ["id", "created_at", "updated_at", "risk_score"]
 
 
 def _validate_unique_client_id(value, instance=None):
@@ -66,14 +70,6 @@ class CustomerSerializer(serializers.ModelSerializer):
     client_id = serializers.CharField(max_length=16, required=False, allow_null=True)
     name = serializers.CharField(max_length=255, trim_whitespace=True)
     age = serializers.IntegerField(min_value=MIN_AGE, max_value=MAX_AGE)
-    risk_score = serializers.DecimalField(
-        max_digits=3,
-        decimal_places=2,
-        min_value=MIN_SCORE,
-        max_value=MAX_SCORE,
-        required=False,
-        allow_null=True,
-    )
     cross_sell_score = serializers.DecimalField(
         max_digits=3,
         decimal_places=2,

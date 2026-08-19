@@ -75,6 +75,12 @@ def test_loads_one_customer_per_row(tmp_path):
 
 
 def test_maps_every_used_column(tmp_path):
+    """
+    risk_score dropped from this assertion in Phase 3a (FR-057): the
+    column is no longer mapped, so it is not among the "used" columns any
+    more. See test_risk_score_column_is_ignored below, which is what
+    replaces this coverage for that field specifically.
+    """
     path = write_csv(tmp_path, [row()])
 
     call_command("loadcustomers", path)
@@ -87,9 +93,40 @@ def test_maps_every_used_column(tmp_path):
     assert customer.gender == "Other"
     assert customer.location == "New Steven"
     assert customer.lead_source == "Agent"
-    assert customer.risk_score == Decimal("0.16")
     assert customer.fraud_risk_flag == "Low"
     assert customer.cross_sell_score == Decimal("0.75")
+
+
+def test_risk_score_column_is_ignored(tmp_path):
+    """
+    FR-057 (T085). The risk engine is the only writer of risk_score now
+    (Phase 3a); a later load must not reintroduce a source-derived score.
+    The Risk_Score column stays in the file and is simply ignored, per the
+    documented unmapped-column behaviour -- it is not removed from HEADER
+    or row() here, matching the real dataset's shape.
+    """
+    path = write_csv(tmp_path, [row(risk="0.16")])
+
+    call_command("loadcustomers", path)
+
+    customer = Customer.objects.get(client_id="CL-00001")
+    assert customer.risk_score is None
+
+
+def test_rerunning_the_load_leaves_a_computed_score_untouched(tmp_path):
+    """
+    FR-057. A score the risk engine already computed must survive a
+    re-load -- the loader has no write path to risk_score at all any
+    more, so this is really asserting the update path doesn't touch a
+    field it no longer maps.
+    """
+    customer = CustomerFactory(client_id="CL-00001", risk_score=Decimal("0.42"))
+    path = write_csv(tmp_path, [row(client_id="CL-00001", risk="0.99")])
+
+    call_command("loadcustomers", path)
+
+    customer.refresh_from_db()
+    assert customer.risk_score == Decimal("0.42")
 
 
 def test_reports_created_count(tmp_path, capsys):

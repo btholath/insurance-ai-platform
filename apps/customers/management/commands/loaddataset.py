@@ -69,6 +69,13 @@ from ...serializers import CustomerSerializer
 
 # CSV column -> Customer field. Columns absent from these maps are ignored
 # (FR-042), so the same file later serves the Claims loader.
+#
+# Risk_Score is deliberately ABSENT (FR-057, Phase 3a). The risk engine
+# (apps/risk/engine.py) is now the sole writer of Customer.risk_score --
+# a denormalised mirror of RiskAssessment.score, not source data. Mapping
+# this column again would let a later load silently overwrite a computed
+# score with an uninterpreted CSV value. The column stays in the file and
+# is simply ignored, per the documented unmapped-column behaviour above.
 COLUMN_MAP = {
     "Client_ID": "client_id",
     "Client_Name": "name",
@@ -78,7 +85,6 @@ COLUMN_MAP = {
     "Client_Gender": "gender",
     "Client_Location": "location",
     "Lead_Source": "lead_source",
-    "Risk_Score": "risk_score",
     "Fraud_Risk_Flag": "fraud_risk_flag",
     "Cross_Sell_Score": "cross_sell_score",
 }

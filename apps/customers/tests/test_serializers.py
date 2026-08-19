@@ -106,21 +106,19 @@ def test_unrecognized_category_refused_naming_field(field, bad_value):
     assert field in serializer.errors
 
 
-@pytest.mark.parametrize("field", ["risk_score", "cross_sell_score"])
 @pytest.mark.parametrize("value", ["-0.01", "1.01", "2.00"])
-def test_score_outside_range_refused(field, value):
+def test_cross_sell_score_outside_range_refused(value):
     """FR-013."""
-    serializer = CustomerSerializer(data=payload(**{field: value}))
+    serializer = CustomerSerializer(data=payload(cross_sell_score=value))
 
     assert not serializer.is_valid()
-    assert field in serializer.errors
+    assert "cross_sell_score" in serializer.errors
 
 
-@pytest.mark.parametrize("field", ["risk_score", "cross_sell_score"])
 @pytest.mark.parametrize("value", ["0.00", "1.00", "0.42"])
-def test_score_boundaries_accepted(field, value):
+def test_cross_sell_score_boundaries_accepted(value):
     """FR-013: 0 and 1 are inside the range."""
-    serializer = CustomerSerializer(data=payload(**{field: value}))
+    serializer = CustomerSerializer(data=payload(cross_sell_score=value))
 
     assert serializer.is_valid(), serializer.errors
 
@@ -188,6 +186,36 @@ def test_stored_scores_are_returned_as_supplied():
     assert data["risk_score"] == "0.42"
     assert data["cross_sell_score"] == "0.75"
     assert data["fraud_risk_flag"] == "Low"
+
+
+# ---------------------------------------------------------------------------
+# risk_score is read-only (FR-056; Phase 3a data-model.md).
+#
+# With the risk engine as sole writer, an API client setting risk_score
+# directly would create a score with no assessment and no explanation --
+# a black-box score, which Principle IV forbids. cross_sell_score is
+# unaffected: nothing in this feature computes it, so it stays writable.
+# ---------------------------------------------------------------------------
+
+
+def test_risk_score_cannot_be_set_via_create():
+    serializer = CustomerSerializer(data=payload(risk_score="0.99"))
+    assert serializer.is_valid(), serializer.errors
+    customer = serializer.save()
+
+    assert customer.risk_score is None
+
+
+def test_risk_score_cannot_be_set_via_update():
+    customer = CustomerFactory(risk_score=None)
+
+    serializer = CustomerUpdateSerializer(
+        customer, data={"risk_score": "0.99"}, partial=True
+    )
+    assert serializer.is_valid(), serializer.errors
+    updated = serializer.save()
+
+    assert updated.risk_score is None
 
 
 # ---------------------------------------------------------------------------

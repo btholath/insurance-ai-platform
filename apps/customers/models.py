@@ -119,11 +119,19 @@ class Customer(TimeStampedModel):
     location = models.CharField(max_length=255)
     lead_source = models.CharField(max_length=32, choices=LeadSource.choices)
 
-    # Stored only. Nothing in this feature computes, derives, or interprets
-    # these -- that is Phase 3 (Risk) and Phase 5 (Fraud) work (FR-007).
-    # null=True with no blank-driven empty-string path, so an absent score
-    # is None and never 0 (FR-006).
+    # Denormalised mirror of RiskAssessment.score (score / 100), written
+    # only by the risk engine (apps/risk/engine.py persist()) -- Phase 3
+    # has arrived, and RiskAssessment is now the record of truth, not this
+    # field. Read-only at the API layer (CustomerSerializer) and no
+    # longer populated by the CSV loader (FR-055, FR-056, FR-057). Kept
+    # here for query convenience (e.g. filtering customers by score
+    # without a join), not as a second source of truth.
+    #
+    # null=True with no blank-driven empty-string path, so a customer with
+    # no assessment yet is None and never 0 (FR-006).
     risk_score = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+    # Stored only. Nothing in this feature computes, derives, or interprets
+    # these -- that is Phase 5 (Fraud) work (FR-007).
     fraud_risk_flag = models.CharField(max_length=16, choices=FraudRiskFlag.choices, null=True, blank=True)
     cross_sell_score = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
 
