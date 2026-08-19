@@ -36,11 +36,11 @@ Project Structure in plan.md.
 **not** already exist — there is no placeholder to replace, so this phase creates
 a module rather than filling one in.
 
-- [ ] T001 Create the app package skeleton: `apps/risk/__init__.py`, `apps/risk/apps.py` with `RiskConfig` (`name = "apps.risk"`, `label = "risk"`, `default_auto_field = "django.db.models.BigAutoField"`), `apps/risk/migrations/__init__.py`, `apps/risk/tests/__init__.py`, and `apps/risk/management/__init__.py` + `apps/risk/management/commands/__init__.py`
-- [ ] T002 Register the app: add `"apps.risk"` to `INSTALLED_APPS` in `config/settings/base.py` (after `"apps.claims"`), and mount `path("api/risk/", include("apps.risk.urls"))` in `config/urls.py`
-- [ ] T003 [P] Create empty test module stubs in `apps/risk/tests/`: `test_rules.py`, `test_engine.py`, `test_models.py`, `test_serializers.py`, `test_views.py`, `test_permissions.py`, `test_staleness.py`, `test_audit.py`, `test_computerisk.py`
-- [ ] T004 Verify the baseline is green before any change: run `docker compose exec web pytest` and record the current pass count (**842 tests** as of 2026-08-17), so a later failure is attributable to this feature
-- [ ] T005 Capture the FR-041/SC-009 baseline: record the current `git rev-parse HEAD:apps/core/exception_handlers.py` blob hash in the implementation notes, so the empty-diff check at T081 compares against a recorded value rather than a remembered one
+- [x] T001 Create the app package skeleton: `apps/risk/__init__.py`, `apps/risk/apps.py` with `RiskConfig` (`name = "apps.risk"`, `label = "risk"`, `default_auto_field = "django.db.models.BigAutoField"`), `apps/risk/migrations/__init__.py`, `apps/risk/tests/__init__.py`, and `apps/risk/management/__init__.py` + `apps/risk/management/commands/__init__.py`
+- [x] T002 Register the app: add `"apps.risk"` to `INSTALLED_APPS` in `config/settings/base.py` (after `"apps.claims"`), and mount `path("api/risk/", include("apps.risk.urls"))` in `config/urls.py`
+- [x] T003 [P] Create empty test module stubs in `apps/risk/tests/`: `test_rules.py`, `test_engine.py`, `test_models.py`, `test_serializers.py`, `test_views.py`, `test_permissions.py`, `test_staleness.py`, `test_audit.py`, `test_computerisk.py`
+- [x] T004 Verify the baseline is green before any change: run `docker compose exec web pytest` and record the current pass count (**842 tests** as of 2026-08-17), so a later failure is attributable to this feature
+- [x] T005 Capture the FR-041/SC-009 baseline: record the current `git rev-parse HEAD:apps/core/exception_handlers.py` blob hash in the implementation notes, so the empty-diff check at T081 compares against a recorded value rather than a remembered one
 
 **Checkpoint**: App registered and importable, baseline recorded, no behavior changed.
 
@@ -59,34 +59,34 @@ reads or writes an assessment, so nothing can proceed until these exist.
 > pure-function tests requiring no database — they are the fastest and highest-value
 > tests in the feature (research §6).
 
-- [ ] T006 [P] Write band tests for the `age` factor covering **both sides of every boundary** — 18, 24, 25, 34, 35, 49, 50, 64, 65, 75 — asserting lower-inclusive/upper-exclusive banding, in `apps/risk/tests/test_rules.py` (FR-007, FR-009, SC-015)
-- [ ] T007 [P] Write band tests for `policy_type` (Auto 15, Health 10, Property 5, Life 0) and for the multi-policy rule taking the **highest-scoring live policy type**, in `apps/risk/tests/test_rules.py` (FR-008, FR-010)
-- [ ] T008 [P] Write band tests for `claims_history` asserting three distinct outcomes — no claim (0), zero-amount claim only (5), one or more non-zero claims (20) — so a `0.00` claim is scored as neither of the other two, in `apps/risk/tests/test_rules.py` (FR-011, FR-013)
-- [ ] T009 [P] Write band tests for `claims_ratio` covering both sides of 1.0, 3.0 and 5.0, plus the bounding case (a 155× ratio contributes exactly the top band's 30, never more), in `apps/risk/tests/test_rules.py` (FR-012)
-- [ ] T010 [P] Write band tests for `denied_claim` (any denied claim 10, otherwise 0), asserting it is scored independently of `claims_history`, in `apps/risk/tests/test_rules.py` (FR-014)
-- [ ] T011 [P] Write tier tests covering both sides of every threshold — scores 0, 19, 20, 39, 40, 59, 60, **90**, 100 — asserting every score in 0–100 maps to exactly one tier with no gap or overlap, in `apps/risk/tests/test_rules.py` (FR-006, FR-007). **90 is the reachable maximum** (`max_score()`, research.md §5); 100 is the outer bound of the `risk_score_range` DB constraint and is unreachable under rule set 1.0.0, so both belong in the list for different reasons — 90 pins real scoring behaviour, 100 pins the constraint envelope. Assert `tier_for(max_score()) == "high"` rather than hard-coding 90, so a future point-value change moves the test with the table
-- [ ] T011a [P] Write a factor-set test asserting **exact equality** — `set(rules.FACTORS) == {"age", "policy_type", "claims_history", "claims_ratio", "denied_claim"}` — in `apps/risk/tests/test_rules.py`. **Equality, not containment**: a subset check would let an unapproved sixth factor through, and a superset check would let an approved one be silently dropped. This is the enforcement point for FR-017, which forbids gender and location as scoring factors and forbids any non-discriminating factor. Without it FR-017 lives only in prose (spec Assumptions, research §5, the T091 docstring) and nothing fails when someone adds a `gender` band. Gender is a protected characteristic and its use in insurance risk scoring carries regulatory exposure, so this assertion must fail loudly and name FR-017 in its failure message (FR-017, FR-009 – FR-014)
+- [x] T006 [P] Write band tests for the `age` factor covering **both sides of every boundary** — 18, 24, 25, 34, 35, 49, 50, 64, 65, 75 — asserting lower-inclusive/upper-exclusive banding, in `apps/risk/tests/test_rules.py` (FR-007, FR-009, SC-015)
+- [x] T007 [P] Write band tests for `policy_type` (Auto 15, Health 10, Property 5, Life 0) and for the multi-policy rule taking the **highest-scoring live policy type**, in `apps/risk/tests/test_rules.py` (FR-008, FR-010)
+- [x] T008 [P] Write band tests for `claims_history` asserting three distinct outcomes — no claim (0), zero-amount claim only (5), one or more non-zero claims (20) — so a `0.00` claim is scored as neither of the other two, in `apps/risk/tests/test_rules.py` (FR-011, FR-013)
+- [x] T009 [P] Write band tests for `claims_ratio` covering both sides of 1.0, 3.0 and 5.0, plus the bounding case (a 155× ratio contributes exactly the top band's 30, never more), in `apps/risk/tests/test_rules.py` (FR-012)
+- [x] T010 [P] Write band tests for `denied_claim` (any denied claim 10, otherwise 0), asserting it is scored independently of `claims_history`, in `apps/risk/tests/test_rules.py` (FR-014)
+- [x] T011 [P] Write tier tests covering both sides of every threshold — scores 0, 19, 20, 39, 40, 59, 60, **90**, 100 — asserting every score in 0–100 maps to exactly one tier with no gap or overlap, in `apps/risk/tests/test_rules.py` (FR-006, FR-007). **90 is the reachable maximum** (`max_score()`, research.md §5); 100 is the outer bound of the `risk_score_range` DB constraint and is unreachable under rule set 1.0.0, so both belong in the list for different reasons — 90 pins real scoring behaviour, 100 pins the constraint envelope. Assert `tier_for(max_score()) == "high"` rather than hard-coding 90, so a future point-value change moves the test with the table
+- [x] T011a [P] Write a factor-set test asserting **exact equality** — `set(rules.FACTORS) == {"age", "policy_type", "claims_history", "claims_ratio", "denied_claim"}` — in `apps/risk/tests/test_rules.py`. **Equality, not containment**: a subset check would let an unapproved sixth factor through, and a superset check would let an approved one be silently dropped. This is the enforcement point for FR-017, which forbids gender and location as scoring factors and forbids any non-discriminating factor. Without it FR-017 lives only in prose (spec Assumptions, research §5, the T091 docstring) and nothing fails when someone adds a `gender` band. Gender is a protected characteristic and its use in insurance risk scoring carries regulatory exposure, so this assertion must fail loudly and name FR-017 in its failure message (FR-017, FR-009 – FR-014)
 
 ### Implementation of the rule set
 
-- [ ] T012 Create `apps/risk/rules.py` with `RULE_SET_VERSION = "1.0.0"` and the five-factor band table as **one declarative structure** serving both computation and explanation, per research §5. Each band carries its label, its bounds, and its points (FR-001, FR-003, FR-004). The factor set is pinned by T011a's equality assertion; adding or removing a factor here without amending FR-017 and T011a will fail the suite by design
-- [ ] T013 Implement the pure `evaluate(customer_data) -> list[FactorResult]` function in `apps/risk/rules.py`, returning exactly five results — one per factor, each with factor name, status, observed value, band label, and points. **No ORM access in this module** (FR-001, FR-002, research §6)
-- [ ] T014 Implement `tier_for(score)` and `max_score()` in `apps/risk/rules.py`, with band boundaries lower-inclusive and upper-exclusive and the top band closed (FR-005, FR-006, FR-007)
+- [x] T012 Create `apps/risk/rules.py` with `RULE_SET_VERSION = "1.0.0"` and the five-factor band table as **one declarative structure** serving both computation and explanation, per research §5. Each band carries its label, its bounds, and its points (FR-001, FR-003, FR-004). The factor set is pinned by T011a's equality assertion; adding or removing a factor here without amending FR-017 and T011a will fail the suite by design
+- [x] T013 Implement the pure `evaluate(customer_data) -> list[FactorResult]` function in `apps/risk/rules.py`, returning exactly five results — one per factor, each with factor name, status, observed value, band label, and points. **No ORM access in this module** (FR-001, FR-002, research §6)
+- [x] T014 Implement `tier_for(score)` and `max_score()` in `apps/risk/rules.py`, with band boundaries lower-inclusive and upper-exclusive and the top band closed (FR-005, FR-006, FR-007)
 
 ### Tests for the models ⚠️
 
-- [ ] T015 [P] Write model tests for `RiskAssessment` field shape, the `risk_score_range` (0–100) and `risk_tier_valid` check constraints, `ordering = ["id"]`, and that `computed_at` is **explicitly set** rather than `auto_now`, in `apps/risk/tests/test_models.py` (FR-005, FR-027)
-- [ ] T016 [P] Write model tests for `RiskFactor` asserting the `UniqueConstraint(assessment, factor)` and the `factor_reason_matches_status` check constraint — a `not_evaluable` row without a reason must be **rejected by the database**, and an `evaluated` row carrying one likewise, in `apps/risk/tests/test_models.py` (FR-018, FR-022, FR-023)
-- [ ] T017 [P] Write a model test asserting `RiskAssessment.customer` is one-to-one, so a second assessment for the same customer is rejected — the basis of FR-033's idempotency, in `apps/risk/tests/test_models.py`
+- [x] T015 [P] Write model tests for `RiskAssessment` field shape, the `risk_score_range` (0–100) and `risk_tier_valid` check constraints, `ordering = ["id"]`, and that `computed_at` is **explicitly set** rather than `auto_now`, in `apps/risk/tests/test_models.py` (FR-005, FR-027)
+- [x] T016 [P] Write model tests for `RiskFactor` asserting the `UniqueConstraint(assessment, factor)` and the `factor_reason_matches_status` check constraint — a `not_evaluable` row without a reason must be **rejected by the database**, and an `evaluated` row carrying one likewise, in `apps/risk/tests/test_models.py` (FR-018, FR-022, FR-023)
+- [x] T017 [P] Write a model test asserting `RiskAssessment.customer` is one-to-one, so a second assessment for the same customer is rejected — the basis of FR-033's idempotency, in `apps/risk/tests/test_models.py`
 
 ### Implementation of the models
 
-- [ ] T018 Create the `RiskTier`, `RiskFactorName` and `FactorStatus` TextChoices plus the `RiskAssessment` model in `apps/risk/models.py`, inheriting `apps.core.models.TimeStampedModel`, with `customer` OneToOneField (`on_delete=PROTECT`, `related_name="risk_assessment"`), `score` PositiveSmallIntegerField, `tier` indexed CharField, `rule_set_version` indexed CharField, `computed_at` DateTimeField, and `computed_by` nullable FK (`on_delete=SET_NULL`) (data-model.md)
-- [ ] T019 Add `RiskAssessment.Meta` in `apps/risk/models.py` with `ordering = ["id"]`, the `risk_score_range` and `risk_tier_valid` check constraints, and the `(tier, score)` index
-- [ ] T020 Create the `RiskFactor` model in `apps/risk/models.py` with `assessment` FK (**`on_delete=CASCADE`** — the one deliberate cascade in this feature; a factor has no meaning apart from its assessment, see data-model.md), `factor`, `status`, `observed_value`, `band_label`, `points` (SmallIntegerField), and `unevaluable_reason`
-- [ ] T021 Add `RiskFactor.Meta` in `apps/risk/models.py` with `ordering = ["id"]`, `UniqueConstraint(assessment, factor)`, the `factor_reason_matches_status` and `factor_points_non_negative` check constraints, and the `(factor, points)` index
-- [ ] T022 [P] Create `RiskAssessmentFactory` and `RiskFactorFactory` in `apps/risk/factories.py` using Factory Boy, per Principle V
-- [ ] T023 Generate and review the migration in `apps/risk/migrations/0001_initial.py` via `makemigrations risk`, confirming all four check constraints, the unique constraint, and both indexes are present
+- [x] T018 Create the `RiskTier`, `RiskFactorName` and `FactorStatus` TextChoices plus the `RiskAssessment` model in `apps/risk/models.py`, inheriting `apps.core.models.TimeStampedModel`, with `customer` OneToOneField (`on_delete=PROTECT`, `related_name="risk_assessment"`), `score` PositiveSmallIntegerField, `tier` indexed CharField, `rule_set_version` indexed CharField, `computed_at` DateTimeField, and `computed_by` nullable FK (`on_delete=SET_NULL`) (data-model.md)
+- [x] T019 Add `RiskAssessment.Meta` in `apps/risk/models.py` with `ordering = ["id"]`, the `risk_score_range` and `risk_tier_valid` check constraints, and the `(tier, score)` index
+- [x] T020 Create the `RiskFactor` model in `apps/risk/models.py` with `assessment` FK (**`on_delete=CASCADE`** — the one deliberate cascade in this feature; a factor has no meaning apart from its assessment, see data-model.md), `factor`, `status`, `observed_value`, `band_label`, `points` (SmallIntegerField), and `unevaluable_reason`
+- [x] T021 Add `RiskFactor.Meta` in `apps/risk/models.py` with `ordering = ["id"]`, `UniqueConstraint(assessment, factor)`, the `factor_reason_matches_status` and `factor_points_non_negative` check constraints, and the `(factor, points)` index
+- [x] T022 [P] Create `RiskAssessmentFactory` and `RiskFactorFactory` in `apps/risk/factories.py` using Factory Boy, per Principle V
+- [x] T023 Generate and review the migration in `apps/risk/migrations/0001_initial.py` via `makemigrations risk`, confirming all four check constraints, the unique constraint, and both indexes are present
 
 **Checkpoint**: The rule set is testable in isolation and the models are queryable. User stories can now begin.
 
@@ -107,25 +107,25 @@ points — with the contributions summing to the score.
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T024 [P] [US1] Write engine tests asserting the **sum invariant** — `sum(factor.points) == assessment.score` — across every fixture combination, in `apps/risk/tests/test_engine.py` (FR-021, SC-001)
-- [ ] T025 [P] [US1] Write engine tests asserting **exactly five factor rows** per assessment, including zero-contribution factors, so no factor is silently omitted, in `apps/risk/tests/test_engine.py` (FR-022, SC-002)
-- [ ] T026 [P] [US1] Write engine tests for the **not-evaluable** path: a customer whose factor cannot be assessed gets a `not_evaluable` row with a stated reason and 0 points — distinct from an `evaluated` row with 0 points, in `apps/risk/tests/test_engine.py` (FR-018, FR-023)
-- [ ] T027 [P] [US1] Write engine tests for **determinism**: scoring the same customer twice with unchanged data yields identical score, tier, and factor rows, in `apps/risk/tests/test_engine.py` (FR-002, SC-004)
-- [ ] T028 [P] [US1] Write serializer tests for the assessment read shape — nested `factors`, `tier_label`, `factor_label`, and `rule_set_version` — asserting the explanation is readable without reference to code, in `apps/risk/tests/test_serializers.py` (FR-020, FR-025, FR-026)
-- [ ] T029 [P] [US1] Write view tests for `GET /api/risk/assessments/{id}/` and `GET /api/risk/assessments/by-customer/{customer_id}/` returning score, tier and factors, in `apps/risk/tests/test_views.py` (FR-019)
-- [ ] T030 [P] [US1] Write a view test asserting **no route returns a score without its factors** — including the list route, which carries `factors` by design — in `apps/risk/tests/test_views.py` (FR-019, FR-024, contracts/risk-assessment-api.md)
-- [ ] T031 [P] [US1] Write a view test asserting `by-customer` for an unassessed customer returns 404 with a body distinguishable from a low score, in `apps/risk/tests/test_views.py` (FR-029)
+- [x] T024 [P] [US1] Write engine tests asserting the **sum invariant** — `sum(factor.points) == assessment.score` — across every fixture combination, in `apps/risk/tests/test_engine.py` (FR-021, SC-001)
+- [x] T025 [P] [US1] Write engine tests asserting **exactly five factor rows** per assessment, including zero-contribution factors, so no factor is silently omitted, in `apps/risk/tests/test_engine.py` (FR-022, SC-002)
+- [x] T026 [P] [US1] Write engine tests for the **not-evaluable** path: a customer whose factor cannot be assessed gets a `not_evaluable` row with a stated reason and 0 points — distinct from an `evaluated` row with 0 points, in `apps/risk/tests/test_engine.py` (FR-018, FR-023)
+- [x] T027 [P] [US1] Write engine tests for **determinism**: scoring the same customer twice with unchanged data yields identical score, tier, and factor rows, in `apps/risk/tests/test_engine.py` (FR-002, SC-004)
+- [x] T028 [P] [US1] Write serializer tests for the assessment read shape — nested `factors`, `tier_label`, `factor_label`, and `rule_set_version` — asserting the explanation is readable without reference to code, in `apps/risk/tests/test_serializers.py` (FR-020, FR-025, FR-026)
+- [x] T029 [P] [US1] Write view tests for `GET /api/risk/assessments/{id}/` and `GET /api/risk/assessments/by-customer/{customer_id}/` returning score, tier and factors, in `apps/risk/tests/test_views.py` (FR-019)
+- [x] T030 [P] [US1] Write a view test asserting **no route returns a score without its factors** — including the list route, which carries `factors` by design — in `apps/risk/tests/test_views.py` (FR-019, FR-024, contracts/risk-assessment-api.md)
+- [x] T031 [P] [US1] Write a view test asserting `by-customer` for an unassessed customer returns 404 with a body distinguishable from a low score, in `apps/risk/tests/test_views.py` (FR-029)
 
 ### Implementation for User Story 1
 
-- [ ] T032 [US1] Implement `score_customer(customer) -> AssessmentResult` in `apps/risk/engine.py`: read the customer's live policies and claims through their **default managers** (so archival exclusion falls out of the existing dual-manager design, FR-016), build the factor input, and delegate to `rules.evaluate()`. Reads only — no writes (research §6)
-- [ ] T033 [US1] Implement `persist(customer, result, actor)` in `apps/risk/engine.py`: inside `transaction.atomic()` with `select_for_update()` on the customer, upsert the `RiskAssessment`, **fully replace** the factor rows, set `computed_at`, mirror `Customer.risk_score = score / 100`, and call `record_action` writing `risk.computed` with `before={"score": <prev or null>}` and `after={"score", "tier", "rule_set_version"}` — all or nothing (FR-035, FR-037, FR-048, FR-052, FR-053, FR-054). **The audit write belongs here, not in Phase 8**: FR-053 requires it share this transaction, and this is the sole write path for scores — deferring it would leave every computation between Phase 3 and Phase 8 unaudited, violating Principle II
-- [ ] T034 [P] [US1] Create `RiskFactorSerializer` in `apps/risk/serializers.py` exposing factor, `factor_label`, status, `observed_value`, `band_label`, `points`, and `unevaluable_reason` (present only when not evaluable) (FR-020, FR-023)
-- [ ] T035 [US1] Create `RiskAssessmentSerializer` in `apps/risk/serializers.py` with nested read-only `factors`, `client_id`, `tier_label`, `computed_by` as email, and `rule_set_version` (FR-019, FR-026, FR-027)
-- [ ] T036 [US1] Create `RiskAssessmentViewSet` in `apps/risk/views.py` with list and retrieve, `queryset` using `select_related("customer", "computed_by").prefetch_related("factors")` to keep factors off the N+1 path, and pagination at 50 (FR-019)
-- [ ] T037 [US1] Add the `by-customer/{customer_id}/` detail route to `apps/risk/views.py`, returning `{"detail": "This customer has not been assessed."}` on 404 **only for callers holding the read role** (FR-029, and FR-045 — the message must not become an existence oracle)
-- [ ] T038 [US1] Create `apps/risk/urls.py` with a `DefaultRouter` registering the assessments viewset, mounted under `/api/risk/`
-- [ ] T039 [US1] Add filters to `RiskAssessmentViewSet.get_queryset()` in `apps/risk/views.py` for `tier`, `customer`, `min_score` and `max_score`, ordered by `id` for stable paging
+- [x] T032 [US1] Implement `score_customer(customer) -> AssessmentResult` in `apps/risk/engine.py`: read the customer's live policies and claims through their **default managers** (so archival exclusion falls out of the existing dual-manager design, FR-016), build the factor input, and delegate to `rules.evaluate()`. Reads only — no writes (research §6)
+- [x] T033 [US1] Implement `persist(customer, result, actor)` in `apps/risk/engine.py`: inside `transaction.atomic()` with `select_for_update()` on the customer, upsert the `RiskAssessment`, **fully replace** the factor rows, set `computed_at`, mirror `Customer.risk_score = score / 100`, and call `record_action` writing `risk.computed` with `before={"score": <prev or null>}` and `after={"score", "tier", "rule_set_version"}` — all or nothing (FR-035, FR-037, FR-048, FR-052, FR-053, FR-054). **The audit write belongs here, not in Phase 8**: FR-053 requires it share this transaction, and this is the sole write path for scores — deferring it would leave every computation between Phase 3 and Phase 8 unaudited, violating Principle II
+- [x] T034 [P] [US1] Create `RiskFactorSerializer` in `apps/risk/serializers.py` exposing factor, `factor_label`, status, `observed_value`, `band_label`, `points`, and `unevaluable_reason` (present only when not evaluable) (FR-020, FR-023)
+- [x] T035 [US1] Create `RiskAssessmentSerializer` in `apps/risk/serializers.py` with nested read-only `factors`, `client_id`, `tier_label`, `computed_by` as email, and `rule_set_version` (FR-019, FR-026, FR-027)
+- [x] T036 [US1] Create `RiskAssessmentViewSet` in `apps/risk/views.py` with list and retrieve, `queryset` using `select_related("customer", "computed_by").prefetch_related("factors")` to keep factors off the N+1 path, and pagination at 50 (FR-019)
+- [x] T037 [US1] Add the `by-customer/{customer_id}/` detail route to `apps/risk/views.py`, returning `{"detail": "This customer has not been assessed."}` on 404 **only for callers holding the read role** (FR-029, and FR-045 — the message must not become an existence oracle)
+- [x] T038 [US1] Create `apps/risk/urls.py` with a `DefaultRouter` registering the assessments viewset, mounted under `/api/risk/`
+- [x] T039 [US1] Add filters to `RiskAssessmentViewSet.get_queryset()` in `apps/risk/views.py` for `tier`, `customer`, `min_score` and `max_score`, ordered by `id` for stable paging
 
 **Checkpoint**: An assessment can be computed in a test and retrieved with a complete, summing explanation. Principle IV is demonstrably satisfied.
 
@@ -147,18 +147,18 @@ assessments without enforced roles is not a shippable increment.
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T040 [P] [US6] Write permission tests sweeping **all nine roles** against the assessment read routes, asserting exactly Risk Manager, Underwriter, Fraud Analyst, Compliance Officer and System Administrator succeed, in `apps/risk/tests/test_permissions.py` (FR-042, SC-009)
-- [ ] T041 [P] [US6] Write a permission test asserting **Customer Service may read a customer but not that customer's assessment** — the divergence that makes the fourth registry entry meaningful, in `apps/risk/tests/test_permissions.py` (research §7)
-- [ ] T042 [P] [US6] Write a permission test asserting Underwriter may read but **not** recompute, and that the refused recompute changes no score, in `apps/risk/tests/test_permissions.py` (FR-043, US6 scenario 3)
-- [ ] T043 [P] [US6] Write a non-disclosure test asserting an unpermitted caller's response for an **existing** and a **non-existent** assessment are identical **body included**, not merely in status, in `apps/risk/tests/test_permissions.py` (FR-045, SC-010)
-- [ ] T044 [P] [US6] Write a permission test asserting unauthenticated callers are refused every risk route, in `apps/risk/tests/test_permissions.py` (FR-046)
-- [ ] T045 [P] [US6] Write a permission test asserting a risk read role grants **no** write access to customer, policy or claim records, in `apps/risk/tests/test_permissions.py` (FR-047)
+- [x] T040 [P] [US6] Write permission tests sweeping **all nine roles** against the assessment read routes, asserting exactly Risk Manager, Underwriter, Fraud Analyst, Compliance Officer and System Administrator succeed, in `apps/risk/tests/test_permissions.py` (FR-042, SC-009)
+- [x] T041 [P] [US6] Write a permission test asserting **Customer Service may read a customer but not that customer's assessment** — the divergence that makes the fourth registry entry meaningful, in `apps/risk/tests/test_permissions.py` (research §7)
+- [x] T042 [P] [US6] Write a permission test asserting Underwriter may read but **not** recompute, and that the refused recompute changes no score, in `apps/risk/tests/test_permissions.py` (FR-043, US6 scenario 3)
+- [x] T043 [P] [US6] Write a non-disclosure test asserting an unpermitted caller's response for an **existing** and a **non-existent** assessment are identical **body included**, not merely in status, in `apps/risk/tests/test_permissions.py` (FR-045, SC-010)
+- [x] T044 [P] [US6] Write a permission test asserting unauthenticated callers are refused every risk route, in `apps/risk/tests/test_permissions.py` (FR-046)
+- [x] T045 [P] [US6] Write a permission test asserting a risk read role grants **no** write access to customer, policy or claim records, in `apps/risk/tests/test_permissions.py` (FR-047)
 
 ### Implementation for User Story 6
 
-- [ ] T046 [US6] Define `VIEW_ROLES` (Risk Manager, Underwriter, Fraud Analyst, Compliance Officer, System Administrator) and `RECOMPUTE_ROLES` (Risk Manager, System Administrator) in `apps/risk/views.py`, with a comment recording why this is a **fourth distinct** role shape against Customer's 7, Policy's 8 and Claim's 5 (FR-042, FR-043)
-- [ ] T047 [US6] Wire `get_permissions()` in `apps/risk/views.py` to return `HasRole(*RECOMPUTE_ROLES)()` for the recompute action and `HasRole(*VIEW_ROLES)()` otherwise (FR-044)
-- [ ] T048 [US6] Override `get_object()` in `apps/risk/views.py` to normalise DRF's `Http404` to `NotFound()`, so a refusal 404 and a genuine-miss 404 are indistinguishable body-included — following `ClaimViewSet.get_object()` and **not** by editing the shared exception handler (FR-045, FR-041)
+- [x] T046 [US6] Define `VIEW_ROLES` (Risk Manager, Underwriter, Fraud Analyst, Compliance Officer, System Administrator) and `RECOMPUTE_ROLES` (Risk Manager, System Administrator) in `apps/risk/views.py`, with a comment recording why this is a **fourth distinct** role shape against Customer's 7, Policy's 8 and Claim's 5 (FR-042, FR-043)
+- [x] T047 [US6] Wire `get_permissions()` in `apps/risk/views.py` to return `HasRole(*RECOMPUTE_ROLES)()` for the recompute action and `HasRole(*VIEW_ROLES)()` otherwise (FR-044)
+- [x] T048 [US6] Override `get_object()` in `apps/risk/views.py` to normalise DRF's `Http404` to `NotFound()`, so a refusal 404 and a genuine-miss 404 are indistinguishable body-included — following `ClaimViewSet.get_object()` and **not** by editing the shared exception handler (FR-045, FR-041)
 
 **Checkpoint**: US1 + US6 together are the minimum defensible increment — assessments are readable, only by the right roles, and every computation is already audited (T033). Principles II, III and IV all hold at this checkpoint.
 
@@ -174,20 +174,20 @@ counts of scored and skipped that account for every customer.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T049 [P] [US2] Write command tests asserting `computerisk` scores every eligible customer and that **`scored + skipped + failed` equals the total considered**, in `apps/risk/tests/test_computerisk.py` (FR-031, SC-006)
-- [ ] T050 [P] [US2] Write a command test asserting a customer with **no live policy** is skipped with a stated reason, **no assessment row is created**, and the run continues rather than aborting (FR-018, FR-032, SC-007), in `apps/risk/tests/test_computerisk.py`
-- [ ] T051 [P] [US2] Write a command test asserting **idempotency**: a second run over unchanged data produces identical scores and factor rows and creates no duplicate assessments, in `apps/risk/tests/test_computerisk.py` (FR-033, SC-004)
-- [ ] T052 [P] [US2] Write a command test asserting a failure on one customer leaves already-scored customers with **complete, valid** assessments and never a score with missing factors, in `apps/risk/tests/test_computerisk.py` (FR-032, US2 scenario 6)
-- [ ] T053 [P] [US2] Write a command test asserting archived customers, archived policies and archived claims are excluded from scoring, in `apps/risk/tests/test_computerisk.py` (FR-016)
-- [ ] T054 [P] [US2] Write a command test asserting `--dry-run` writes **no assessment, no factor row, no mirror and no audit entry**, in `apps/risk/tests/test_computerisk.py`
+- [x] T049 [P] [US2] Write command tests asserting `computerisk` scores every eligible customer and that **`scored + skipped + failed` equals the total considered**, in `apps/risk/tests/test_computerisk.py` (FR-031, SC-006)
+- [x] T050 [P] [US2] Write a command test asserting a customer with **no live policy** is skipped with a stated reason, **no assessment row is created**, and the run continues rather than aborting (FR-018, FR-032, SC-007), in `apps/risk/tests/test_computerisk.py`
+- [x] T051 [P] [US2] Write a command test asserting **idempotency**: a second run over unchanged data produces identical scores and factor rows and creates no duplicate assessments, in `apps/risk/tests/test_computerisk.py` (FR-033, SC-004)
+- [x] T052 [P] [US2] Write a command test asserting a failure on one customer leaves already-scored customers with **complete, valid** assessments and never a score with missing factors, in `apps/risk/tests/test_computerisk.py` (FR-032, US2 scenario 6)
+- [x] T053 [P] [US2] Write a command test asserting archived customers, archived policies and archived claims are excluded from scoring, in `apps/risk/tests/test_computerisk.py` (FR-016)
+- [x] T054 [P] [US2] Write a command test asserting `--dry-run` writes **no assessment, no factor row, no mirror and no audit entry**, in `apps/risk/tests/test_computerisk.py`
 
 ### Implementation for User Story 2
 
-- [ ] T055 [US2] Create `apps/risk/management/commands/computerisk.py` with `--customer`, `--tier`, `--dry-run` and `--limit` arguments per contracts/computerisk-command.md (FR-030)
-- [ ] T056 [US2] Implement the batch loop in `apps/risk/management/commands/computerisk.py`: iterate `Customer.objects` in chunks with `select_related`/`prefetch_related` over policies and claims, calling `engine.score_customer()` then `engine.persist()`, with **each customer in its own transaction** so a failure never aborts the run (FR-032, FR-035)
-- [ ] T057 [US2] Implement skip handling in `apps/risk/management/commands/computerisk.py`: a customer with no live policy is recorded as skipped **with its reason** and is not scored, and no assessment row is created (FR-018, SC-007)
-- [ ] T058 [US2] Implement the counts report and tier distribution output in `apps/risk/management/commands/computerisk.py`, with exit codes 0 / 1 / 2 per the contract, and add a test over a seeded population asserting **every tier holds at least 5% of scored customers** — the only check that the rules discriminate rather than collapsing the book into one band, which per-band tests cannot catch (FR-031, SC-005)
-- [ ] T059 [US2] Use `bulk_create` for factor rows in `engine.persist()` in `apps/risk/engine.py` and confirm the full-book run stays **under 60s** — a naive per-customer implementation issues ~12,000 queries (plan.md Performance Goals)
+- [x] T055 [US2] Create `apps/risk/management/commands/computerisk.py` with `--customer`, `--tier`, `--dry-run` and `--limit` arguments per contracts/computerisk-command.md (FR-030)
+- [x] T056 [US2] Implement the batch loop in `apps/risk/management/commands/computerisk.py`: iterate `Customer.objects` in chunks with `select_related`/`prefetch_related` over policies and claims, calling `engine.score_customer()` then `engine.persist()`, with **each customer in its own transaction** so a failure never aborts the run (FR-032, FR-035)
+- [x] T057 [US2] Implement skip handling in `apps/risk/management/commands/computerisk.py`: a customer with no live policy is recorded as skipped **with its reason** and is not scored, and no assessment row is created (FR-018, SC-007)
+- [x] T058 [US2] Implement the counts report and tier distribution output in `apps/risk/management/commands/computerisk.py`, with exit codes 0 / 1 / 2 per the contract, and add a test over a seeded population asserting **every tier holds at least 5% of scored customers** — the only check that the rules discriminate rather than collapsing the book into one band, which per-band tests cannot catch (FR-031, SC-005)
+- [x] T059 [US2] Use `bulk_create` for factor rows in `engine.persist()` in `apps/risk/engine.py` and confirm the full-book run stays **under 60s** — a naive per-customer implementation issues ~12,000 queries (plan.md Performance Goals)
 
 **Checkpoint**: The full 3,000-customer book can be scored in one command.
 
@@ -202,15 +202,15 @@ customer alone, and confirm their score updates while no other customer's change
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T060 [P] [US3] Write view tests for `POST /api/risk/assessments/recompute/` recalculating one customer from current data, in `apps/risk/tests/test_views.py` (FR-034)
-- [ ] T061 [P] [US3] Write a view test asserting a single-customer recompute **modifies no other customer's** assessment, in `apps/risk/tests/test_views.py` (FR-034, US3 scenario 2)
-- [ ] T062 [P] [US3] Write a view test asserting a recompute for a customer with **no prior assessment creates one** rather than failing, in `apps/risk/tests/test_views.py` (US3 scenario 5)
-- [ ] T063 [P] [US3] Write a view test asserting a customer who cannot be scored returns **422** with a stated reason — distinct from a 400 validation error and from a 404, in `apps/risk/tests/test_views.py` (FR-018)
+- [x] T060 [P] [US3] Write view tests for `POST /api/risk/assessments/recompute/` recalculating one customer from current data, in `apps/risk/tests/test_views.py` (FR-034)
+- [x] T061 [P] [US3] Write a view test asserting a single-customer recompute **modifies no other customer's** assessment, in `apps/risk/tests/test_views.py` (FR-034, US3 scenario 2)
+- [x] T062 [P] [US3] Write a view test asserting a recompute for a customer with **no prior assessment creates one** rather than failing, in `apps/risk/tests/test_views.py` (US3 scenario 5)
+- [x] T063 [P] [US3] Write a view test asserting a customer who cannot be scored returns **422** with a stated reason — distinct from a 400 validation error and from a 404, in `apps/risk/tests/test_views.py` (FR-018)
 
 ### Implementation for User Story 3
 
-- [ ] T064 [US3] Add the `recompute` action to `RiskAssessmentViewSet` in `apps/risk/views.py`, accepting `{"customer": <id>}`, calling `engine.score_customer()` + `engine.persist(actor=request.user)`, and returning the full assessment payload (FR-034)
-- [ ] T065 [US3] Implement the 422 path in the recompute action in `apps/risk/views.py` for a customer with no live policy, with the reason in the response body (FR-018)
+- [x] T064 [US3] Add the `recompute` action to `RiskAssessmentViewSet` in `apps/risk/views.py`, accepting `{"customer": <id>}`, calling `engine.score_customer()` + `engine.persist(actor=request.user)`, and returning the full assessment payload (FR-034)
+- [x] T065 [US3] Implement the 422 path in the recompute action in `apps/risk/views.py` for a customer with no live policy, with the reason in the response body (FR-018)
 
 **Checkpoint**: Both computation entry points work — batch and per-customer.
 
@@ -230,15 +230,15 @@ correctness defect.
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T066 [P] [US5] Write staleness tests asserting a freshly computed assessment reports `is_stale: false` and carries `computed_at`, in `apps/risk/tests/test_staleness.py` (FR-027, FR-039, US5 scenario 3)
-- [ ] T067 [P] [US5] Write staleness tests asserting an assessment becomes stale when the **customer**, a **live policy**, or a **live claim** is changed after computation, in `apps/risk/tests/test_staleness.py` (FR-038, FR-039, SC-012)
-- [ ] T068 [P] [US5] Write a staleness test asserting a stale assessment **still returns its stored score and factors** and is **not** recalculated as a side effect of being read, in `apps/risk/tests/test_staleness.py` (FR-040)
-- [ ] T069 [P] [US5] Write a staleness test documenting the accepted over-reporting: changing a field no factor reads (e.g. `phone`) still marks the assessment stale, asserting the **safe direction** rather than treating it as a bug, in `apps/risk/tests/test_staleness.py` (research §4)
+- [x] T066 [P] [US5] Write staleness tests asserting a freshly computed assessment reports `is_stale: false` and carries `computed_at`, in `apps/risk/tests/test_staleness.py` (FR-027, FR-039, US5 scenario 3)
+- [x] T067 [P] [US5] Write staleness tests asserting an assessment becomes stale when the **customer**, a **live policy**, or a **live claim** is changed after computation, in `apps/risk/tests/test_staleness.py` (FR-038, FR-039, SC-012)
+- [x] T068 [P] [US5] Write a staleness test asserting a stale assessment **still returns its stored score and factors** and is **not** recalculated as a side effect of being read, in `apps/risk/tests/test_staleness.py` (FR-040)
+- [x] T069 [P] [US5] Write a staleness test documenting the accepted over-reporting: changing a field no factor reads (e.g. `phone`) still marks the assessment stale, asserting the **safe direction** rather than treating it as a bug, in `apps/risk/tests/test_staleness.py` (research §4)
 
 ### Implementation for User Story 5
 
-- [ ] T070 [US5] Implement derived staleness in `apps/risk/serializers.py` (or a model property), comparing `computed_at` against the customer's `updated_at` and the `updated_at` of their live policies and claims. **No stored flag** — research §4 records why a flag has no honest writer in a phase that forbids automatic recomputation (FR-038, FR-039)
-- [ ] T071 [US5] Add `is_stale` and conditional `stale_reason` to `RiskAssessmentSerializer` in `apps/risk/serializers.py`, and add `prefetch_related` on policies and claims to the viewset queryset in `apps/risk/views.py` so the list route does not become an N+1 (FR-039)
+- [x] T070 [US5] Implement derived staleness in `apps/risk/serializers.py` (or a model property), comparing `computed_at` against the customer's `updated_at` and the `updated_at` of their live policies and claims. **No stored flag** — research §4 records why a flag has no honest writer in a phase that forbids automatic recomputation (FR-038, FR-039)
+- [x] T071 [US5] Add `is_stale` and conditional `stale_reason` to `RiskAssessmentSerializer` in `apps/risk/serializers.py`, and add `prefetch_related` on policies and claims to the viewset queryset in `apps/risk/views.py` so the list route does not become an N+1 (FR-039)
 
 **Checkpoint**: A stale score is visibly stale, and 3a's scope boundary is safe.
 
@@ -256,21 +256,21 @@ and score before and after.
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T072 [P] [US4] Write audit tests asserting every computation writes a `risk.computed` entry with actor, timestamp, **previous score** and **new score**, in `apps/risk/tests/test_audit.py` (FR-048, SC-008)
-- [ ] T073 [P] [US4] Write an audit test asserting a recompute that leaves the score **unchanged is still recorded**, in `apps/risk/tests/test_audit.py` (FR-049)
-- [ ] T074 [P] [US4] Write an audit test asserting a batch run writes one `risk.batch_computed` entry carrying counts in `context`, distinguishable from the per-customer entries within it, in `apps/risk/tests/test_audit.py` (FR-050)
-- [ ] T075 [P] [US4] Write an audit test asserting every entry carries the **rule-set version** (FR-054), and that the assessment itself records the version that produced it (FR-026, US4 scenario 2), in `apps/risk/tests/test_audit.py`
-- [ ] T076 [P] [US4] Write an audit test asserting the audit write happens **inside the same transaction** as the score — forcing the audit write to fail must leave the score uncommitted, in `apps/risk/tests/test_audit.py` (FR-053)
-- [ ] T077 [P] [US4] Write an audit test asserting refused risk operations are recorded with actor and attempted action, and that risk audit entries remain **append-only** (update/delete raise), in `apps/risk/tests/test_audit.py` (FR-051, FR-052, US4 scenario 4)
+- [x] T072 [P] [US4] Write audit tests asserting every computation writes a `risk.computed` entry with actor, timestamp, **previous score** and **new score**, in `apps/risk/tests/test_audit.py` (FR-048, SC-008)
+- [x] T073 [P] [US4] Write an audit test asserting a recompute that leaves the score **unchanged is still recorded**, in `apps/risk/tests/test_audit.py` (FR-049)
+- [x] T074 [P] [US4] Write an audit test asserting a batch run writes one `risk.batch_computed` entry carrying counts in `context`, distinguishable from the per-customer entries within it, in `apps/risk/tests/test_audit.py` (FR-050)
+- [x] T075 [P] [US4] Write an audit test asserting every entry carries the **rule-set version** (FR-054), and that the assessment itself records the version that produced it (FR-026, US4 scenario 2), in `apps/risk/tests/test_audit.py`
+- [x] T076 [P] [US4] Write an audit test asserting the audit write happens **inside the same transaction** as the score — forcing the audit write to fail must leave the score uncommitted, in `apps/risk/tests/test_audit.py` (FR-053)
+- [x] T077 [P] [US4] Write an audit test asserting refused risk operations are recorded with actor and attempted action, and that risk audit entries remain **append-only** (update/delete raise), in `apps/risk/tests/test_audit.py` (FR-051, FR-052, US4 scenario 4)
 
 ### Implementation for User Story 4
 
-- [ ] T078 [US4] Verify the `risk.computed` audit write added in T033 satisfies US4 in full: confirm it reuses the existing append-only `record_action` path with no new audit mechanism, that `before`/`after` carry previous and new score, and that `rule_set_version` is present on every entry, in `apps/risk/engine.py` (FR-048, FR-052, FR-053, FR-054)
-- [ ] T079 [US4] Write the `risk.batch_computed` entry at the end of the batch run in `apps/risk/management/commands/computerisk.py`, carrying scored/skipped/failed counts and `dry_run` in `context` (FR-050)
-- [ ] T080 [US4] Register the risk route in `apps/core/audit_routes.py` `register_defaults()` — prefix `/api/risk/`, target type `risk.RiskAssessment`, action prefix `risk`, the five view roles and two write roles. **This should be a single `register(...)` call and nothing else** (FR-041)
-- [ ] T081 [US4] Verify FR-041/SC-009: run `git diff --stat apps/core/exception_handlers.py` and confirm **empty output** against the T005 baseline. A non-empty diff is a **finding to record**, not a line to quietly commit — the Phase 2b registry bet is what is under test
-- [ ] T082 [US4] Update `apps/core/tests/test_audit_routes.py`: swap the now-registered `/api/risk/1/` example in `test_unregistered_path_matches_nothing` (line 34) for a still-unregistered prefix, keeping the assertion intact, and add assertions for the risk entry's target type and five-role view set. **This edit is predicted, not a regression** — Phase 2c made the identical swap for `/api/claims/1/`
-- [ ] T083 [US4] Verify the first three registry consumers are unaffected: run `docker compose exec web pytest apps/customers/tests/test_audit.py apps/policies/tests/test_audit.py apps/claims/tests/test_audit.py -v` and confirm all pass **unmodified**
+- [x] T078 [US4] Verify the `risk.computed` audit write added in T033 satisfies US4 in full: confirm it reuses the existing append-only `record_action` path with no new audit mechanism, that `before`/`after` carry previous and new score, and that `rule_set_version` is present on every entry, in `apps/risk/engine.py` (FR-048, FR-052, FR-053, FR-054)
+- [x] T079 [US4] Write the `risk.batch_computed` entry at the end of the batch run in `apps/risk/management/commands/computerisk.py`, carrying scored/skipped/failed counts and `dry_run` in `context` (FR-050)
+- [x] T080 [US4] Register the risk route in `apps/core/audit_routes.py` `register_defaults()` — prefix `/api/risk/`, target type `risk.RiskAssessment`, action prefix `risk`, the five view roles and two write roles. **This should be a single `register(...)` call and nothing else** (FR-041)
+- [x] T081 [US4] Verify FR-041/SC-009: run `git diff --stat apps/core/exception_handlers.py` and confirm **empty output** against the T005 baseline. A non-empty diff is a **finding to record**, not a line to quietly commit — the Phase 2b registry bet is what is under test
+- [x] T082 [US4] Update `apps/core/tests/test_audit_routes.py`: swap the now-registered `/api/risk/1/` example in `test_unregistered_path_matches_nothing` (line 34) for a still-unregistered prefix, keeping the assertion intact, and add assertions for the risk entry's target type and five-role view set. **This edit is predicted, not a regression** — Phase 2c made the identical swap for `/api/claims/1/`
+- [x] T083 [US4] Verify the first three registry consumers are unaffected: run `docker compose exec web pytest apps/customers/tests/test_audit.py apps/policies/tests/test_audit.py apps/claims/tests/test_audit.py -v` and confirm all pass **unmodified**
 
 **Checkpoint**: The full audit trail exists and the registry's fourth-consumer prediction is settled either way.
 
