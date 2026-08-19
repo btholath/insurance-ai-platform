@@ -284,16 +284,16 @@ field's new writer.
 
 ### Tests ⚠️
 
-- [ ] T084 [P] Write a test asserting `CustomerSerializer.risk_score` is **read-only** — an API client cannot set a score directly, since that would create a score with no assessment and no explanation, in `apps/customers/tests/test_serializers.py` (FR-056, Principle IV)
-- [ ] T085 [P] Write a loader test asserting `loaddataset` **does not** write `risk_score` from the CSV, and that re-running the load leaves computed scores untouched, in `apps/customers/tests/test_loaddataset.py` (FR-057)
-- [ ] T086 [P] Write a test asserting the mirror holds: `Customer.risk_score == round(assessment.score / 100, 2)` after every computation, in `apps/risk/tests/test_engine.py` (FR-055)
+- [x] T084 [P] Write a test asserting `CustomerSerializer.risk_score` is **read-only** — an API client cannot set a score directly, since that would create a score with no assessment and no explanation, in `apps/customers/tests/test_serializers.py` (FR-056, Principle IV)
+- [x] T085 [P] Write a loader test asserting `loaddataset` **does not** write `risk_score` from the CSV, and that re-running the load leaves computed scores untouched, in `apps/customers/tests/test_loaddataset.py` (FR-057)
+- [x] T086 [P] Write a test asserting the mirror holds: `Customer.risk_score == round(assessment.score / 100, 2)` after every computation, in `apps/risk/tests/test_engine.py` (FR-055)
 
 ### Implementation
 
-- [ ] T087 Remove the `"Risk_Score": "risk_score"` entry from `COLUMN_MAP` at `apps/customers/management/commands/loaddataset.py:81`, so a later load cannot reintroduce source scores. The CSV column stays in the file and is simply ignored, per the documented unmapped-column behavior (FR-057)
-- [ ] T088 Make `risk_score` read-only in `CustomerSerializer` in `apps/customers/serializers.py`, and remove it from any write path (FR-056)
-- [ ] T089 Create a data migration in `apps/customers/migrations/` setting `risk_score = NULL` for all rows, reversible as a **no-op** — the reverse cannot restore source values and must not pretend to (FR-056, SC-013)
-- [ ] T090 Update the `risk_score` comment block in `apps/customers/models.py:122-126`, which currently reads "Stored only. Nothing in this feature computes, derives, or interprets these — that is Phase 3 (Risk) and Phase 5 (Fraud) work". Phase 3 has now arrived: record that the field is a **denormalised mirror** of `RiskAssessment.score`, written only by the risk engine, and that `RiskAssessment` is the record of truth
+- [x] T087 Remove the `"Risk_Score": "risk_score"` entry from `COLUMN_MAP` at `apps/customers/management/commands/loaddataset.py:81`, so a later load cannot reintroduce source scores. The CSV column stays in the file and is simply ignored, per the documented unmapped-column behavior (FR-057)
+- [x] T088 Make `risk_score` read-only in `CustomerSerializer` in `apps/customers/serializers.py`, and remove it from any write path (FR-056)
+- [x] T089 Create a data migration in `apps/customers/migrations/` setting `risk_score = NULL` for all rows, reversible as a **no-op** — the reverse cannot restore source values and must not pretend to (FR-056, SC-013)
+- [x] T090 Update the `risk_score` comment block in `apps/customers/models.py:122-126`, which currently reads "Stored only. Nothing in this feature computes, derives, or interprets these — that is Phase 3 (Risk) and Phase 5 (Fraud) work". Phase 3 has now arrived: record that the field is a **denormalised mirror** of `RiskAssessment.score`, written only by the risk engine, and that `RiskAssessment` is the record of truth
 
 **Checkpoint**: No customer carries a source-derived risk score.
 
