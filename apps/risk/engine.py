@@ -82,6 +82,16 @@ def persist(customer, result: AssessmentResult, *, actor) -> RiskAssessment:
         previous = RiskAssessment.objects.filter(customer=locked_customer).first()
         previous_score = previous.score if previous else None
 
+        # Mirror the score onto the customer BEFORE computed_at is
+        # captured, deliberately: that save bumps customer.updated_at
+        # (auto_now), and staleness (T070) compares computed_at against
+        # exactly that field. Saving after would make every fresh
+        # assessment appear stale the instant it was computed -- a
+        # self-inflicted false positive the over-reporting design (research
+        # §4) never intended to include the engine's own write.
+        locked_customer.risk_score = round(Decimal(result.score) / 100, 2)
+        locked_customer.save(update_fields=["risk_score", "updated_at"])
+
         computed_at = timezone.now()
         assessment, _created = RiskAssessment.objects.update_or_create(
             customer=locked_customer,
@@ -110,9 +120,6 @@ def persist(customer, result: AssessmentResult, *, actor) -> RiskAssessment:
             )
             for f in result.factors
         )
-
-        locked_customer.risk_score = round(Decimal(result.score) / 100, 2)
-        locked_customer.save(update_fields=["risk_score", "updated_at"])
 
         record_action(
             actor=actor,

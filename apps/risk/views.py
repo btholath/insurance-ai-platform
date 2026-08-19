@@ -50,7 +50,7 @@ class RiskAssessmentViewSet(
 ):
     queryset = RiskAssessment.objects.select_related(
         "customer", "computed_by"
-    ).prefetch_related("factors")
+    ).prefetch_related("factors", "customer__policies", "customer__policies__claims")
     serializer_class = RiskAssessmentSerializer
     pagination_class = RiskAssessmentPagination
 
