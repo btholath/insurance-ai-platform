@@ -177,3 +177,26 @@ def register_defaults():
     # this one, and they share its role sets exactly (FR-047). If anomalies
     # ever diverge in roles, a second entry is the mechanism -- that is the
     # registry working as designed, not a workaround.
+
+    register(
+        AuditedRoute(
+            prefix="/api/risk/",
+            target_type="risk.RiskAssessment",
+            action_prefix="risk",
+            # FIVE view roles -- a fourth distinct shape against Customer's
+            # seven, Policy's eight and Claim's five. Customer Service reads
+            # customers but not their risk assessments: a risk assessment is
+            # a judgment about a person, more sensitive than the customer
+            # record it derives from (contracts/risk-assessment-api.md).
+            view_roles=(
+                Role.RISK_MANAGER,
+                Role.UNDERWRITER,
+                Role.FRAUD_ANALYST,
+                Role.COMPLIANCE_OFFICER,
+                Role.SYSTEM_ADMINISTRATOR,
+            ),
+            # Two write roles. The only write route is recompute; an
+            # Underwriter may read but not trigger one (FR-043).
+            write_roles=(Role.RISK_MANAGER, Role.SYSTEM_ADMINISTRATOR),
+        )
+    )

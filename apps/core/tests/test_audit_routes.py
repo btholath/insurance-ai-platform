@@ -26,12 +26,14 @@ def test_unregistered_path_matches_nothing():
     claims produces no entry at all, rather than falling back to some
     default module and mislabelling the target type.
 
-    This used /api/claims/1/ as its unregistered example until Phase 2c
-    registered claims as the registry's third consumer. The example was
-    swapped rather than the assertion weakened -- the guarantee under test
-    is unchanged, only the set of paths that demonstrate it.
+    This used /api/risk/1/ as its unregistered example until Phase 3a
+    registered risk as the registry's fourth consumer -- exactly the
+    predicted swap T082 called out, following the identical swap Phase 2c
+    made for /api/claims/1/. The example was swapped rather than the
+    assertion weakened -- the guarantee under test is unchanged, only the
+    set of paths that demonstrate it.
     """
-    assert audit_routes.match("/api/risk/1/") is None
+    assert audit_routes.match("/api/fraud/1/") is None
     assert audit_routes.match("/health/") is None
     assert audit_routes.match("/") is None
 
@@ -39,11 +41,14 @@ def test_unregistered_path_matches_nothing():
 def test_registered_prefixes_resolve_to_their_own_target_type():
     customers = audit_routes.match("/api/customers/42/")
     policies = audit_routes.match("/api/policies/42/")
+    risk = audit_routes.match("/api/risk/42/")
 
     assert customers.target_type == "customers.Customer"
     assert customers.action_prefix == "customer"
     assert policies.target_type == "policies.Policy"
     assert policies.action_prefix == "policy"
+    assert risk.target_type == "risk.RiskAssessment"
+    assert risk.action_prefix == "risk"
 
 
 def test_collection_and_detail_paths_resolve_to_the_same_entry():
@@ -126,6 +131,37 @@ def test_customer_role_sets_match_the_shipped_viewset():
     entry = audit_routes.match("/api/customers/")
     assert set(entry.view_roles) == set(VIEW_ROLES)
     assert set(entry.write_roles) == set(WRITE_ROLES)
+
+
+def test_risk_role_sets_match_the_shipped_viewset():
+    """
+    Pins Phase 3a's values against apps.risk.views, the same way T118
+    (nee test_customer_role_sets_match_the_shipped_viewset) pins
+    customers. If the two ever disagree, risk refusal recording has
+    silently changed.
+    """
+    from apps.risk.views import RECOMPUTE_ROLES, VIEW_ROLES
+
+    entry = audit_routes.match("/api/risk/")
+    assert set(entry.view_roles) == set(VIEW_ROLES)
+    assert set(entry.write_roles) == set(RECOMPUTE_ROLES)
+
+
+def test_risk_view_roles_are_the_five_role_shape():
+    """
+    A fourth distinct role shape against Customer's seven, Policy's eight
+    and Claim's five (contracts/risk-assessment-api.md).
+    """
+    entry = audit_routes.match("/api/risk/")
+
+    assert set(entry.view_roles) == {
+        Role.RISK_MANAGER,
+        Role.UNDERWRITER,
+        Role.FRAUD_ANALYST,
+        Role.COMPLIANCE_OFFICER,
+        Role.SYSTEM_ADMINISTRATOR,
+    }
+    assert Role.CUSTOMER_SERVICE not in entry.view_roles
 
 
 def test_roles_for_selects_write_roles_on_write_methods():

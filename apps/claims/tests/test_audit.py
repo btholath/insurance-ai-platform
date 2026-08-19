@@ -292,10 +292,19 @@ def test_anomaly_routes_resolve_to_the_claims_entry():
     assert route.target_type == "claims.Claim"
 
 
-def test_claims_is_the_registrys_third_consumer():
+def test_claims_is_a_registered_consumer():
+    """
+    Originally asserted claims was the registry's THIRD (and, at the time,
+    final) consumer -- a closed-world assertion Phase 3a necessarily broke
+    by registering risk as a fourth. Relaxed to membership rather than
+    exact-set equality, the same predicted-swap treatment T082 applied to
+    apps/core/tests/test_audit_routes.py's own closed-world assertion:
+    the guarantee under test (claims is registered) is unchanged, only
+    the shape of the check.
+    """
     prefixes = {route.prefix for route in audit_routes.all_routes()}
 
-    assert prefixes == {"/api/customers/", "/api/policies/", "/api/claims/"}
+    assert {"/api/customers/", "/api/policies/", "/api/claims/"} <= prefixes
 
 
 # -- Load attribution (FR-039, FR-048) -------------------------------------
