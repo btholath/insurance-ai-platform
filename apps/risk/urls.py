@@ -13,4 +13,11 @@ classified an ordinary miss and never recorded at all.
 Verified before the design was fixed; see specs/005-risk-scoring-engine/
 research.md §1. Do not "simplify" this into a nested route.
 """
-urlpatterns = []
+from rest_framework.routers import DefaultRouter
+
+from .views import RiskAssessmentViewSet
+
+router = DefaultRouter()
+router.register("assessments", RiskAssessmentViewSet, basename="riskassessment")
+
+urlpatterns = router.urls
