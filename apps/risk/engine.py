@@ -6,6 +6,13 @@ between calls out to the ORM on the read side and nothing on the write side
 recomputes -- the split is what lets Phase 3b call `persist()` from a
 Celery task without rewriting this module, since the expensive read/evaluate
 work and the atomic write are already two separate calls.
+
+This is why the boundary matters: a background task only needs to call
+`score_customer()` off the request thread and hand the result to
+`persist()` exactly as this module's own callers already do (the
+`RiskAssessmentViewSet.recompute` action, `computerisk`). Nothing about
+scoring, persistence, or the transaction changes to support that --
+Phase 3b becomes additive on top of this file, not a rewrite of it.
 """
 from dataclasses import dataclass
 from decimal import Decimal

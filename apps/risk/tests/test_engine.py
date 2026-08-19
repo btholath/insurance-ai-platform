@@ -176,12 +176,23 @@ class TestPersist:
 
 
 class TestNoAutomaticRecomputation:
-    """FR-036/SC-011: nothing recomputes a score as a side effect."""
+    """
+    FR-036/SC-011 (T094): nothing recomputes a score as a side effect of
+    a customer, policy, or claim write -- not on create, not on an
+    ordinary update, and not on archival. Verified per entity because
+    each is a plausible place a signal handler could have been wired in
+    (a post_save on Customer, on Policy, on Claim) and each needs its own
+    proof of absence.
+    """
 
-    def test_changing_customer_does_not_touch_stored_score(self):
+    def _persisted(self):
         customer = young_auto_customer()
         result = engine.score_customer(customer)
         assessment = engine.persist(customer, result, actor=None)
+        return customer, assessment
+
+    def test_changing_customer_does_not_touch_stored_score(self):
+        customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
 
@@ -191,3 +202,110 @@ class TestNoAutomaticRecomputation:
         assessment.refresh_from_db()
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
+
+    def test_archiving_customer_does_not_touch_stored_score(self):
+        customer, assessment = self._persisted()
+        original_score = assessment.score
+        original_computed_at = assessment.computed_at
+
+        customer.archived_at = timezone.now()
+        customer.save()
+
+        assessment.refresh_from_db()
+        assert assessment.score == original_score
+        assert assessment.computed_at == original_computed_at
+
+    def test_changing_a_policy_does_not_touch_stored_score(self):
+        customer, assessment = self._persisted()
+        original_score = assessment.score
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+
+        policy.premium_usd = Decimal("9999.00")
+        policy.save()
+
+        assessment.refresh_from_db()
+        assert assessment.score == original_score
+        assert assessment.computed_at == original_computed_at
+
+    def test_archiving_a_policy_does_not_touch_stored_score(self):
+        customer, assessment = self._persisted()
+        original_score = assessment.score
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+
+        policy.archived_at = timezone.now()
+        policy.save()
+
+        assessment.refresh_from_db()
+        assert assessment.score == original_score
+        assert assessment.computed_at == original_computed_at
+
+    def test_changing_a_claim_does_not_touch_stored_score(self):
+        customer, assessment = self._persisted()
+        original_score = assessment.score
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+        claim = policy.claims.first()
+
+        claim.claim_amount_usd = Decimal("50000.00")
+        claim.save()
+
+        assessment.refresh_from_db()
+        assert assessment.score == original_score
+        assert assessment.computed_at == original_computed_at
+
+    def test_archiving_a_claim_does_not_touch_stored_score(self):
+        customer, assessment = self._persisted()
+        original_score = assessment.score
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+        claim = policy.claims.first()
+
+        claim.archived_at = timezone.now()
+        claim.save()
+
+        assessment.refresh_from_db()
+        assert assessment.score == original_score
+        assert assessment.computed_at == original_computed_at
+
+    def test_creating_a_new_policy_for_an_assessed_customer_does_not_touch_stored_score(self):
+        customer, assessment = self._persisted()
+        original_score = assessment.score
+        original_computed_at = assessment.computed_at
+
+        PolicyFactory(customer=customer, policy_type="Health", premium_usd=Decimal("400.00"))
+
+        assessment.refresh_from_db()
+        assert assessment.score == original_score
+        assert assessment.computed_at == original_computed_at
+
+
+def test_no_signal_handler_or_scheduled_task_touches_risk_scoring():
+    """
+    FR-036/SC-011: the absence of a signal handler, post_save hook,
+    Celery task or scheduler wired to recompute risk is itself a
+    requirement, not an omission (tasks.md T094). This inspects the
+    actual receivers Django has connected for post_save/pre_save/
+    post_delete on Customer, Policy and Claim, rather than trusting that
+    grepping the source for "risk" would have caught an indirect wiring
+    (e.g. a receiver registered by name in a signals.py this repo does
+    not have).
+    """
+    from django.db.models.signals import post_delete, post_save, pre_save
+
+    from apps.claims.models import Claim
+    from apps.customers.models import Customer
+    from apps.policies.models import Policy
+
+    for signal in (post_save, pre_save, post_delete):
+        for sender in (Customer, Policy, Claim):
+            receivers = signal._live_receivers(sender)
+            for receiver in receivers:
+                module = getattr(receiver, "__module__", "")
+                qualname = getattr(receiver, "__qualname__", "")
+                assert "risk" not in module.lower(), (
+                    f"{module}.{qualname} is connected to {signal} for {sender} "
+                    "-- this is exactly the kind of automatic recomputation "
+                    "FR-036 forbids"
+                )

@@ -49,7 +49,19 @@ deliberately; do not relax the assertion.
 Point values and tier thresholds were validated against all 3,000 seeded
 customers before adoption (research.md §5): every tier clears SC-005's 5%
 floor, and the observed range is 0-90 of a possible 90 -- the top of the
-scale is reachable and was reached.
+scale is reachable and was reached. The simulated tier split, run against
+the full seeded population before this table was fixed:
+
+    Low       1,003 customers  33.4%  (score  0-19)
+    Moderate    959 customers  32.0%  (score 20-39)
+    Elevated    507 customers  16.9%  (score 40-59)
+    High        531 customers  17.7%  (score 60-90)
+
+If a future change to a band or a threshold moves any of these numbers
+below 5%, SC-005 fails by design (see the tier-distribution assertion in
+computerisk's tests) -- that split is what makes this table an actual
+discriminator across the book rather than a rule set that collapses
+everyone into one or two tiers.
 
 THE SCALE IS 0-90, NOT 0-100. `max_score()` sums the table below and returns
 90. The 0-100 figures in data-model.md and plan.md are the storage envelope
