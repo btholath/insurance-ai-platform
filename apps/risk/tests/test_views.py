@@ -162,3 +162,17 @@ class TestRecompute:
 
         assert response.status_code == 422
         assert "detail" in response.data
+
+    def test_recompute_for_nonexistent_customer_returns_404(self, authenticated_client):
+        client, _ = authenticated_client(WRITER)
+
+        response = client.post(f"{URL}recompute/", {"customer": 999999}, format="json")
+
+        assert response.status_code == 404
+
+    def test_recompute_with_non_numeric_customer_returns_404(self, authenticated_client):
+        client, _ = authenticated_client(WRITER)
+
+        response = client.post(f"{URL}recompute/", {"customer": "not-an-id"}, format="json")
+
+        assert response.status_code == 404

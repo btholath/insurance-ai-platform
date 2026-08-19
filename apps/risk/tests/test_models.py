@@ -98,6 +98,11 @@ class TestRiskFactorShape:
     def test_ordering_is_by_id(self):
         assert RiskFactor._meta.ordering == ["id"]
 
+    def test_str_representation(self):
+        assessment = make_assessment()
+        factor = make_factor(assessment, factor=RiskFactorName.AGE, points=15)
+        assert str(factor) == f"age=15 on assessment {assessment.id}"
+
     def test_unique_constraint_on_assessment_and_factor(self):
         assessment = make_assessment()
         make_factor(assessment, factor=RiskFactorName.AGE)

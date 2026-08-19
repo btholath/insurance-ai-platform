@@ -332,6 +332,70 @@ def test_evaluate_total_never_exceeds_max_score():
 
 
 # ---------------------------------------------------------------------------
+# Defensive paths (T097; 100% coverage on rules.py, Principle V's
+# business-rule core).
+#
+# Each of these guards a condition the current schema already forbids at
+# the ORM layer (Customer.age is non-nullable; PolicyType.choices is
+# exactly the four ranked types; the DB's risk_score_range constraint
+# keeps score in 0-100). rules.py is a pure module with no ORM access by
+# design (module docstring, point 1), so it cannot lean on the schema to
+# rule these inputs out -- the guards exist because a caller from a REPL,
+# a future factor, or a schema change could still reach them. 100%
+# coverage means proving each one, not deleting it as unreachable.
+# ---------------------------------------------------------------------------
+
+
+def test_score_age_is_not_evaluable_when_age_is_none():
+    """
+    Defensive: Customer.age is non-nullable, so this path is unreachable
+    through the ORM today -- but score_age() takes a plain Optional[int],
+    not a Customer, and must handle the absence honestly if ever called
+    with one (FR-018).
+    """
+    result = rules.score_age(None)
+    assert result.status == rules.FactorStatus.NOT_EVALUABLE
+    assert result.points == 0
+    assert result.unevaluable_reason
+
+
+def test_score_policy_type_is_not_evaluable_for_an_unranked_type():
+    """
+    Defensive: PolicyType.choices is exactly the four names in
+    POLICY_TYPE_POINTS today, so this path is unreachable through the ORM
+    -- but score_policy_type() takes plain strings and must not silently
+    score an unranked coverage type as if it were evaluated (FR-018).
+    """
+    result = rules.score_policy_type(["Umbrella"])
+    assert result.status == rules.FactorStatus.NOT_EVALUABLE
+    assert result.points == 0
+    assert result.unevaluable_reason
+
+
+def test_select_raises_on_a_value_outside_every_band():
+    """
+    Defensive: every band table in this module starts at 0 and ends at
+    infinity, so `_select` cannot fail for a caller that has already
+    established a non-negative input -- this proves the fallthrough is a
+    real programming-error guard, not dead code, by actually triggering
+    it with a negative value.
+    """
+    with pytest.raises(ValueError, match="no band contains"):
+        rules._select(rules.AGE_BANDS, -1)
+
+
+def test_tier_for_raises_outside_the_stated_scale():
+    """
+    Defensive: the risk_score_range DB constraint keeps a stored score in
+    0-100, so this path is unreachable for any persisted assessment --
+    but tier_for() takes a plain int and must refuse a value the tier
+    table was never built to cover (FR-006, FR-007).
+    """
+    with pytest.raises(ValueError, match="falls outside"):
+        rules.tier_for(101)
+
+
+# ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 

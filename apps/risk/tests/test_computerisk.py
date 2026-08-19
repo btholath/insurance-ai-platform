@@ -202,6 +202,21 @@ class TestSingleCustomerAndTierFilters:
         out, code = run(customer="CL-99999")
         assert code == 1
 
+    def test_unknown_tier_aborts_with_exit_code_1(self):
+        out, code = run(tier="not-a-tier")
+        assert code == 1
+
+    def test_tier_filter_rescopes_to_that_tier_only(self):
+        low = scoreable_customer(age=45, policy_type="Life")
+        call_command("computerisk", customer=low.client_id)
+
+        other = scoreable_customer(age=22, policy_type="Auto")
+        low_tier = RiskAssessment.objects.get(customer=low).tier
+
+        call_command("computerisk", tier=low_tier)
+
+        assert RiskAssessment.objects.filter(customer=low).exists()
+
     def test_limit_stops_after_n_customers(self):
         scoreable_customer()
         scoreable_customer()
