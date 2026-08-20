@@ -301,15 +301,15 @@ field's new writer.
 
 ## Phase 10: Polish & Cross-Cutting Concerns
 
-- [ ] T091 [P] Add a module docstring to `apps/risk/rules.py` recording the rule table's provenance — the measured distributions in research §5, the simulated tier split (33.4/32.0/16.9/17.7%), and the boundary convention (lower-inclusive, upper-exclusive) — so the next person changing a band knows what validated the current one
-- [ ] T092 [P] Add a module docstring to `apps/risk/engine.py` recording the pure-evaluation/persistence split and **why**: Phase 3b calls the same `persist()` from a Celery task, so the boundary is what makes 3b additive rather than a rewrite (research §6)
-- [ ] T093 [P] Add a comment in `apps/risk/urls.py` (or `views.py`) recording why risk is mounted at `/api/risk/` rather than nested under `/api/customers/`: the nested path resolves to the **customer** registry entry, mis-auditing every risk refusal under the wrong module and role set (research §1). This is the single most likely decision for a future reader to "simplify" without knowing what it cost
-- [ ] T094 Verify FR-036/SC-011 explicitly: write a test in `apps/risk/tests/test_engine.py` asserting that creating, modifying or archiving a customer, policy or claim leaves the stored score **and `computed_at`** unchanged. Confirm the codebase contains **no** signal handler, `post_save` hook, Celery task or scheduler touching risk — the absence is a requirement, not an omission
-- [ ] T095 Verify FR-028 across `apps/risk/`: confirm no code path takes a business action on a score — nothing declines cover, prices a premium, opens an investigation, or notifies
-- [ ] T096 Run the full suite and confirm no regression across all apps: `docker compose exec web pytest` — expect **842 + new** tests passing (T004 baseline)
-- [ ] T097 Confirm coverage: `docker compose exec web pytest --cov=apps.risk --cov-report=term-missing`, requiring **100%** on `apps/risk/rules.py` and `apps/risk/engine.py` (the business-rule core Principle V names) and **≥ 95%** on `apps/risk` overall (SC-015)
-- [ ] T098 Execute `specs/005-risk-scoring-engine/quickstart.md` steps 1–9 end to end, including the real double-run that verifies idempotency empirically rather than by assertion
-- [ ] T099 Execute `specs/005-risk-scoring-engine/quickstart.md` step 10 (the unscoreable-customer path) — **against the test database**, or with operator confirmation if run against dev
+- [x] T091 [P] Add a module docstring to `apps/risk/rules.py` recording the rule table's provenance — the measured distributions in research §5, the simulated tier split (33.4/32.0/16.9/17.7%), and the boundary convention (lower-inclusive, upper-exclusive) — so the next person changing a band knows what validated the current one
+- [x] T092 [P] Add a module docstring to `apps/risk/engine.py` recording the pure-evaluation/persistence split and **why**: Phase 3b calls the same `persist()` from a Celery task, so the boundary is what makes 3b additive rather than a rewrite (research §6)
+- [x] T093 [P] Add a comment in `apps/risk/urls.py` (or `views.py`) recording why risk is mounted at `/api/risk/` rather than nested under `/api/customers/`: the nested path resolves to the **customer** registry entry, mis-auditing every risk refusal under the wrong module and role set (research §1). This is the single most likely decision for a future reader to "simplify" without knowing what it cost
+- [x] T094 Verify FR-036/SC-011 explicitly: write a test in `apps/risk/tests/test_engine.py` asserting that creating, modifying or archiving a customer, policy or claim leaves the stored score **and `computed_at`** unchanged. Confirm the codebase contains **no** signal handler, `post_save` hook, Celery task or scheduler touching risk — the absence is a requirement, not an omission
+- [x] T095 Verify FR-028 across `apps/risk/`: confirm no code path takes a business action on a score — nothing declines cover, prices a premium, opens an investigation, or notifies
+- [x] T096 Run the full suite and confirm no regression across all apps: `docker compose exec web pytest` — expect **842 + new** tests passing (T004 baseline)
+- [x] T097 Confirm coverage: `docker compose exec web pytest --cov=apps.risk --cov-report=term-missing`, requiring **100%** on `apps/risk/rules.py` and `apps/risk/engine.py` (the business-rule core Principle V names) and **≥ 95%** on `apps/risk` overall (SC-015)
+- [x] T098 Execute `specs/005-risk-scoring-engine/quickstart.md` steps 1–9 end to end, including the real double-run that verifies idempotency empirically rather than by assertion
+- [x] T099 Execute `specs/005-risk-scoring-engine/quickstart.md` step 10 (the unscoreable-customer path) — **against the test database**, or with operator confirmation if run against dev
 
 **Note on T098/T099**: quickstart steps 5–10 write to the **dev database**.
 Confirm with the operator before running them; steps 1–4 are test-only and safe.
