@@ -72,9 +72,9 @@ tested, until this phase is complete.
 
 - [ ] T012 Create `apps/risk/tasks.py` with `recompute_customer_risk`, decorated `@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=5)`: re-fetch `Customer.objects.get(pk=customer_id)` (default manager — archived/missing customers raise `DoesNotExist`, caught and treated as a no-op, never retried), return early if `RiskAssessment.objects.filter(customer=customer).exists()` is `False`, otherwise call `engine.score_customer(customer)` then `engine.persist(customer, result, actor=None)` (celery-task-contract.md, FR-005, FR-006)
 - [ ] T013 Create `apps/risk/signals.py` with three `post_save` receiver functions — `on_customer_saved`, `on_policy_saved`, `on_claim_saved` — each resolving the affected `customer_id` and enqueueing via `transaction.on_commit(lambda: recompute_customer_risk.delay(customer_id))`, never a bare `.delay()` (research.md §1, celery-task-contract.md's trigger contract)
-- [ ] T014 Edit `apps/customers/apps.py`'s `CustomersConfig.ready()` to import and connect `apps.risk.signals.on_customer_saved` to `post_save` for the `Customer` model (plan.md Project Structure: receivers live in the source app, not centralized in `apps.risk`)
-- [ ] T015 Edit `apps/policies/apps.py`'s `PoliciesConfig.ready()` to connect `apps.risk.signals.on_policy_saved` to `post_save` for the `Policy` model
-- [ ] T016 Edit `apps/claims/apps.py`'s `ClaimsConfig.ready()` to connect `apps.risk.signals.on_claim_saved` to `post_save` for the `Claim` model
+- [ ] T014 Add a `ready()` method to `apps/customers/apps.py`'s `CustomersConfig` (no `ready()` currently exists) that imports and connects `apps.risk.signals.on_customer_saved` to `post_save` for the `Customer` model (plan.md Project Structure: receivers live in the source app, not centralized in `apps.risk`)
+- [ ] T015 Add a `ready()` method to `apps/policies/apps.py`'s `PoliciesConfig` (no `ready()` currently exists) that connects `apps.risk.signals.on_policy_saved` to `post_save` for the `Policy` model
+- [ ] T016 Add a `ready()` method to `apps/claims/apps.py`'s `ClaimsConfig` (no `ready()` currently exists) that connects `apps.risk.signals.on_claim_saved` to `post_save` for the `Claim` model
 - [ ] T017 [P] Create `RiskAssessmentFactory`-adjacent test fixtures needed by `test_tasks.py`/`test_signals.py` if not already covered by Phase 3a's existing `apps/risk/factories.py` — extend that file only if a genuinely new fixture shape is needed (e.g. a customer-with-no-assessment-yet convenience), not a duplicate of existing factories
 
 **Checkpoint**: A Customer/Policy/Claim save enqueues a task; the task correctly no-ops or recomputes. This is the mechanism every user story below exercises from a different angle.
@@ -161,7 +161,7 @@ regression is caught immediately, before US3/US4 add more surface.
 ### Tests for User Story 5 ⚠️
 
 - [ ] T028 [P] [US5] Write a test asserting `POST /api/risk/assessments/recompute/` (Phase 3a's existing route) succeeds with the same response shape, status code, and role restrictions as Phase 3a's own `test_views.py::TestRecompute` suite, run with automatic recompute's signals connected (not disabled), in `apps/risk/tests/test_views.py` (extend, do not duplicate, Phase 3a's existing tests) (FR-012, Acceptance Scenario 1)
-- [ ] T029 [P] [US5] Write a test asserting a manual recompute (via the API) and an automatic recompute (via a concurrent Policy save for the same customer) both resolve to exactly one current, internally-consistent `RiskAssessment` — reusing `engine.persist()`'s existing `select_for_update()` guarantee from Phase 3a, verified here under the new automatic-trigger condition specifically — in `apps/risk/tests/test_views.py` or `apps/risk/tests/test_tasks.py` (FR-013, Acceptance Scenario 2, SC-008)
+- [ ] T029 [P] [US5] Write a test asserting a manual recompute (via the API) and an automatic recompute (via a concurrent Policy save for the same customer) both resolve to exactly one current, internally-consistent `RiskAssessment` — reusing `engine.persist()`'s existing `select_for_update()` guarantee from Phase 3a, verified here under the new automatic-trigger condition specifically — in `apps/risk/tests/test_views.py` (FR-013, Acceptance Scenario 2, SC-008)
 
 ### Implementation for User Story 5
 
