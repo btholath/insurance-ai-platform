@@ -117,7 +117,7 @@ network interference — if it recurs, check `lsof -i :8000` first.
 
 ---
 
-## 3. Phase 3a — Risk Scoring Engine (in progress)
+## 3. Phase 3a — Risk Scoring Engine (complete)
 
 ### 3.1 What it delivers
 
@@ -292,13 +292,141 @@ genuinely all of `T012` onward still ahead. Committed as `e1f15bd`
 misattribution in the `audit_routes.py` registry — and the
 `docker-compose.yml` bind-mount change documented in §2).
 
-### 3.5 Remaining implementation
+### 3.5 Implementation completion — six commits, a real self-caught investigation, and a genuine process gap
 
-⏳ PENDING — `T012` onward, roughly 88 of 100 tasks.
+**Six clean, well-organized commits** carried the remaining implementation
+from `T012` through `T099`, each mapped to a specific User Story range
+rather than one large undifferentiated dump:
+
+```
+e1f15bd  T001-T014  apps/risk/ scaffold + rules.py (documented in §3.4)
+f32dfe7  T015-T023  RiskAssessment and RiskFactor models
+e01db27  T024-T039  User Story 1 — explainable risk assessments
+4a639ca  T040-T048  User Story 6 — roles enforced on every risk operation
+5df6622  T049-T059  User Story 2 — computerisk batch command
+f3ed49e  T060-T071  User Story 3 (recompute) and User Story 5 (staleness)
+cbe8624  T072-T083  User Story 4 — the audit trail, registry's 4th entry
+```
+
+**`T033` (the D1 audit-sequencing fix) and `T011a` (the factor-set
+equality assertion) were independently re-verified against real source
+lines, not accepted from a summary** — `engine.py:79-129` confirmed as
+one unbroken `transaction.atomic()` block with `record_action()` as its
+final statement, and `test_rules.py`'s `assert set(rules.FACTORS) ==
+APPROVED_FACTORS` confirmed as a genuine hard equality, not a
+containment check.
+
+**A real process gap, caught and corrected rather than papered over**:
+after all six commits landed, `tasks.md` still showed **zero** tasks
+checked — the checkbox-tracking discipline that Customer, Policy, and
+Claims all maintained throughout their own implementations simply
+didn't happen here, despite the work itself being genuinely done. Before
+trusting a reconciliation, the file's own timestamp was checked
+directly against the commit history to rule out a stale-copy mixup
+(`tasks.md` predated every implementation commit, confirming the gap
+was real, not a file-mismatch illusion). The reconciliation itself was
+done non-bulk — cross-referenced against real git history — and spot-
+checked at the `T083`/`T084` boundary before being trusted: `T083`
+landed at `[x]`, `T084` at `[ ]`, exactly where the real commit history
+said the line should fall.
+
+**Phase 3a's `T084`-`T090` scope: making `Customer.risk_score` a
+denormalized mirror, engine-only.** The reasoning is a precise
+application of Principle IV, worth restating: *"an API client setting
+`risk_score` directly would create a score with no assessment and no
+explanation — a black-box score, which Principle IV forbids."* This
+required genuinely splitting an existing parametrized test
+(`test_score_outside_range_refused`/`test_score_boundaries_accepted`)
+that had treated `risk_score` and `cross_sell_score` identically as
+writable fields — correctly recognized that a read-only field is
+*silently dropped* from `validated_data` rather than validated and
+refused, so the old shared test could no longer mean what it used to.
+
+**The full `quickstart.md` (all 10 steps) was executed end-to-end
+against real, running dev infrastructure — not just the test suite.**
+This included the actual sum invariant across all 3,000 real
+assessments (zero mismatches), a real double-run proving idempotency
+byte-for-byte, and constructing a genuinely unassessable customer to
+confirm the 422/404 paths live, not just in a fixture.
+
+**A real, unrelated discrepancy — investigated properly rather than
+hand-waved, on request.** During cleanup, a policy's premium was found
+already restored to its correct value *before* the explicit restore
+command ran — initially dismissed with *"regardless, it's confirmed
+correct."* Pressed to find the actual cause rather than accept the
+outcome alone, the investigation went back to the **append-only audit
+trail** (not memory, not a guess) and found the real answer: a
+`loaddataset` run performed for an unrelated check (verifying
+`risk_score` wasn't reimported from the CSV) had, as an undocumented
+side effect, silently reconciled *every* CSV-mapped field on that
+policy — including `premium_usd`, which had nothing to do with what was
+being checked. The two audit entries' distinct shapes (a clean
+before/after diff on the intentional test PATCH versus a full-field,
+empty-actor snapshot from the loader) were the actual distinguishing
+evidence. **The original "regardless" dismissal was explicitly named as
+wrong, not quietly corrected**: *"my 'regardless' was wrong to wave
+off: it wasn't a benign coincidence, it was a real side effect... I
+didn't notice at the time."* Recorded to persistent memory as a
+standing lesson: `loaddataset`'s reconciliation is not scoped to
+whatever a given run is checking — it silently rewrites every
+CSV-mapped field on every row it touches, every time, which matters for
+any future manual dev-DB verification work that happens to run the
+loader for an unrelated reason while something else is under test.
+
+**Two documentation-only gaps found during the quickstart run were
+fixed immediately, not left as findings** — `quickstart.md`'s own
+`max_score` expectation still said `100` after the `90`-vs-`100`
+correction (§3.4) had already fixed the code and every other doc; and
+its `curl`+Token-auth examples didn't match this platform's actual
+session-only authentication. Both low-risk, pure-documentation fixes,
+correctly judged not worth deferring the way the original scale
+decision was.
+
+**Final verified state**, independently confirmed at every number, not
+accepted from any single completion summary:
+```
+100/100 tasks reconciled (verified via grep, not narrated)
+1049 passed, 0 failed
+100% coverage on every file in apps/risk/ (rules.py, engine.py,
+  models.py, serializers.py, views.py, factories.py, urls.py,
+  computerisk.py)
+99% overall project coverage
+3,000 customers confirmed in the dev database after cleanup
+```
+Committed across `15396ee` (task reconciliation) and `2272284`
+(quickstart doc fixes), both pushed. `origin/main` confirmed matching
+local `HEAD`.
 
 ---
 
-## 4. Progress log
+## 4. Phase 3a — complete
+
+**The platform's first genuinely explainable-AI-adjacent capability is
+done.** A rules-based risk engine, transparent by construction — every
+score traceable to a persisted, factor-level explanation, never
+silently recomputed — built on top of everything Phase 1 and Phase 2
+proved out (the same `HasRole` mechanism, the same audit-refusal
+registry now genuinely proven as a fourth consumer requiring zero
+changes to shared code, the same dual-manager archival pattern).
+
+**The throughline holds again.** Every real finding this sub-phase
+produced — the `90`-vs-`100` scale bug, the `tasks.md` reconciliation
+gap, the `loaddataset` side-effect on an unrelated field — was found by
+actually running the system, reading real audit entries, and checking
+real file timestamps, not by however-careful a review of intent. The
+one moment a plausible-sounding explanation was accepted without that
+scrutiny (*"regardless, it's fine"*) was also the one moment briefly
+worth correcting once pressed — consistent with every other phase in
+this project, including the times this runbook's own author was the
+one who needed correcting.
+
+**Next**: Phase 3b (automatic recompute via Celery), the second half of
+the original split decision — introducing asynchronous execution for
+the first time, on top of an on-demand engine now fully proven.
+
+---
+
+## 5. Progress log
 
 **2026-08-17 to 2026-08-18** — Phase 3a spec, plan, and analyze
 remediation complete; implementation started and partially complete.
@@ -333,3 +461,34 @@ likely closing the Phase 2b stale-image failure class permanently.
 deliberately at this point given session length, with the
 highest-risk file safely committed rather than left exposed in the
 working tree.
+
+**2026-08-19 to 2026-08-20 — Phase 3a complete.** T012 through T099
+finished across six well-organized commits, each independently
+verified rather than trusted as a batch. Both flagged checkpoints from
+the prior session (T033's audit-write sequencing, T011a's factor-set
+equality) were re-confirmed against real source lines before further
+work proceeded. A genuine process gap was caught and fixed:
+`tasks.md`'s checkboxes were never updated through six commits' worth
+of real work - confirmed real (not a stale-file mixup) by checking the
+file's own timestamp against commit history, then reconciled
+non-bulk and spot-checked at the T083/T084 boundary. The
+`Customer.risk_score` field was correctly made engine-only and
+read-only (T084-T090), with the reasoning grounded directly in
+Principle IV. The full quickstart (all 10 steps) ran end-to-end
+against real dev infrastructure, including an empirical double-run
+proving idempotency. A real, unrelated data discrepancy - surfaced
+during cleanup and initially dismissed with "regardless, it's
+correct" - was properly root-caused on request via the append-only
+audit trail: an unrelated `loaddataset` run had silently reconciled
+every CSV-mapped field on a policy, not just the one being checked,
+overwriting a field under manual test as an undocumented side effect.
+The original dismissal was explicitly named as wrong, not quietly
+corrected, and the finding was recorded to persistent memory as a
+standing lesson for future manual dev-DB work. Two documentation-only
+gaps found during the quickstart run were fixed immediately rather
+than deferred. Final, independently verified: 100/100 tasks, 1049/1049
+tests passing, 100% coverage on every file in `apps/risk/`, 99%
+overall, dev database confirmed clean at 3,000 customers. Committed
+across `15396ee` and `2272284`, both pushed, `origin/main` confirmed
+matching local `HEAD`. **Phase 3a is done.** Next: Phase 3b
+(automatic recompute via Celery).
