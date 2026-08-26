@@ -89,17 +89,28 @@ def persist(customer, result: AssessmentResult, *, actor) -> RiskAssessment:
         previous = RiskAssessment.objects.filter(customer=locked_customer).first()
         previous_score = previous.score if previous else None
 
-        # Mirror the score onto the customer BEFORE computed_at is
-        # captured, deliberately: that save bumps customer.updated_at
-        # (auto_now), and staleness (T070) compares computed_at against
-        # exactly that field. Saving after would make every fresh
-        # assessment appear stale the instant it was computed -- a
-        # self-inflicted false positive the over-reporting design (research
-        # §4) never intended to include the engine's own write.
-        locked_customer.risk_score = round(Decimal(result.score) / 100, 2)
-        locked_customer.save(update_fields=["risk_score", "updated_at"])
-
+        # Mirror the score onto the customer via a raw update(), not
+        # .save(): the post_save signal that drives automatic recompute
+        # (apps/customers/apps.py) is connected unconditionally, so a
+        # .save() here would re-enqueue recompute_customer_risk from
+        # inside its own persist() call -- an unbounded loop under eager
+        # execution (each recompute re-saves the customer, which
+        # re-enqueues another recompute). update() doesn't fire post_save.
+        #
+        # update() also skips auto_now, so updated_at is set explicitly
+        # here -- using the same timestamp as computed_at, computed once,
+        # so customer.updated_at is never fractionally ahead of
+        # computed_at (staleness (T070) compares the two; see T033).
         computed_at = timezone.now()
+        new_risk_score = round(Decimal(result.score) / 100, 2)
+        type(locked_customer).objects.filter(pk=locked_customer.pk).update(
+            risk_score=new_risk_score,
+            updated_at=computed_at,
+        )
+        # update() bypasses the ORM instance, so keep it in sync in Python
+        # for any caller that reads customer/locked_customer after persist().
+        locked_customer.risk_score = new_risk_score
+        locked_customer.updated_at = computed_at
         assessment, _created = RiskAssessment.objects.update_or_create(
             customer=locked_customer,
             defaults={
