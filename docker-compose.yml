@@ -30,6 +30,22 @@ services:
       retries: 5
       start_period: 30s
 
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/django/Dockerfile
+    command: celery -A config worker --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   db:
     image: postgres:16-alpine
     environment:

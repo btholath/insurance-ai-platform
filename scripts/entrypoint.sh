@@ -43,4 +43,8 @@ sys.exit(0 if get_user_model().objects.filter(email='''${su_email}'''.lower()).e
     fi
 fi
 
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 exec gunicorn config.wsgi:application --bind 0.0.0.0:8000

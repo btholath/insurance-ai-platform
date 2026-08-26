@@ -36,13 +36,13 @@ below are repository-root-relative, matching plan.md's Project Structure.
 settings, dependency, and worker process — before any risk-specific code
 exists. This is the first time Celery is introduced to the project.
 
-- [ ] T001 Add `celery>=5.4,<6.0` to `pyproject.toml`'s `[project].dependencies` (research.md §4)
-- [ ] T002 Create `config/celery.py`: `Celery("insurance_ai_platform")` app instance, `app.config_from_object("django.conf:settings", namespace="CELERY")`, `app.autodiscover_tasks()` — the canonical Django+Celery layout (research.md §4)
-- [ ] T003 Edit `config/__init__.py` to import `celery_app` from `config.celery` as `__all__ = ("celery_app",)`, so `@shared_task` resolves correctly across the project
-- [ ] T004 Add `CELERY_BROKER_URL = REDIS_URL` and `CELERY_RESULT_BACKEND = REDIS_URL` to `config/settings/base.py`, reusing the existing required `REDIS_URL` setting — no new environment variable (research.md §4)
-- [ ] T005 Add `CELERY_TASK_ALWAYS_EAGER = True` and `CELERY_TASK_EAGER_PROPAGATES = True` to `config/settings/test.py` (research.md §5) — this governs the *default* test behavior; retry/exhaustion tests override it per-test (see Phase 4)
-- [ ] T006 Add a `celery-worker` service to `docker-compose.yml`: same `build` as `web` (no new Dockerfile), `command: celery -A config worker --loglevel=info`, `env_file: .env`, `depends_on: db` and `redis` both `condition: service_healthy` (research.md §4, plan.md Project Structure)
-- [ ] T007 Verify the stack boots clean: `docker compose up -d`, confirm `celery-worker` reaches a healthy/running state and its logs show a successful "ready" line with no import errors (quickstart.md Prerequisites)
+- [X] T001 Add `celery>=5.4,<6.0` to `pyproject.toml`'s `[project].dependencies` (research.md §4)
+- [X] T002 Create `config/celery.py`: `Celery("insurance_ai_platform")` app instance, `app.config_from_object("django.conf:settings", namespace="CELERY")`, `app.autodiscover_tasks()` — the canonical Django+Celery layout (research.md §4)
+- [X] T003 Edit `config/__init__.py` to import `celery_app` from `config.celery` as `__all__ = ("celery_app",)`, so `@shared_task` resolves correctly across the project
+- [X] T004 Add `CELERY_BROKER_URL = REDIS_URL` and `CELERY_RESULT_BACKEND = REDIS_URL` to `config/settings/base.py`, reusing the existing required `REDIS_URL` setting — no new environment variable (research.md §4)
+- [X] T005 Add `CELERY_TASK_ALWAYS_EAGER = True` and `CELERY_TASK_EAGER_PROPAGATES = True` to `config/settings/test.py` (research.md §5) — this governs the *default* test behavior; retry/exhaustion tests override it per-test (see Phase 4)
+- [X] T006 Add a `celery-worker` service to `docker-compose.yml`: same `build` as `web` (no new Dockerfile), `command: celery -A config worker --loglevel=info`, `env_file: .env`, `depends_on: db` and `redis` both `condition: service_healthy` (research.md §4, plan.md Project Structure)
+- [X] T007 Verify the stack boots clean: `docker compose up -d`, confirm `celery-worker` reaches a healthy/running state and its logs show a successful "ready" line with no import errors (quickstart.md Prerequisites)
 
 **Checkpoint**: Celery is live infrastructure — a worker process exists, connects to Redis, and can run a task — but no risk-specific behavior exists yet.
 
