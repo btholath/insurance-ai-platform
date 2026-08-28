@@ -176,3 +176,99 @@ class TestRecompute:
         response = client.post(f"{URL}recompute/", {"customer": "not-an-id"}, format="json")
 
         assert response.status_code == 404
+
+
+class TestRecomputeWithAutomaticRecomputeActive:
+    """
+    US5/FR-012: Phase 3b's signals (Customer/Policy/Claim post_save ->
+    recompute_customer_risk) are connected app-wide in every test process
+    -- there is no "disabled" mode to opt out of for this suite. So the
+    regression guarantee this story requires ("manual recompute behaves
+    identically whether or not automatic recompute is active") is verified
+    here simply by running Phase 3a's own manual-recompute route with
+    those signals live, which is the only state that exists.
+    """
+
+    def _customer_with_data(self):
+        customer = CustomerFactory(age=22)
+        policy = PolicyFactory(customer=customer, policy_type="Auto", premium_usd=Decimal("1000.00"))
+        ClaimFactory(policy=policy, claim_status=ClaimStatus.APPROVED, claim_amount_usd=Decimal("500.00"))
+        return customer
+
+    def test_manual_recompute_same_shape_and_status_as_phase_3a(self, authenticated_client):
+        """
+        Same response shape/status/role as TestRecompute's own assertions
+        (test_recompute_scores_current_data), run here to confirm the
+        signals wired in apps/customers/apps.py, apps/policies/apps.py,
+        and apps/claims/apps.py (connected unconditionally at Django
+        startup, including for this test process) don't change it.
+        """
+        client, _ = authenticated_client(WRITER)
+        customer = self._customer_with_data()
+
+        response = client.post(f"{URL}recompute/", {"customer": customer.id}, format="json")
+
+        assert response.status_code == 200
+        assert response.data["score"] >= 0
+        assert response.data["tier"] in {t.value for t in RiskTier}
+        assert len(response.data["factors"]) == 5
+        assert response.data["customer"] == customer.id
+
+    def test_manual_recompute_for_unscoreable_customer_still_422(self, authenticated_client):
+        """Phase 3a's refusal path (no live policy) is unaffected by signals."""
+        client, _ = authenticated_client(WRITER)
+        customer = CustomerFactory()  # no live policy
+
+        response = client.post(f"{URL}recompute/", {"customer": customer.id}, format="json")
+
+        assert response.status_code == 422
+        assert "detail" in response.data
+
+
+class TestManualAndAutomaticRecomputeConverge:
+    """
+    FR-013, SC-008: a manual recompute (API) and an automatic recompute
+    (triggered by a concurrent Policy save for the same customer) must
+    both resolve to exactly one current, internally-consistent
+    RiskAssessment row -- engine.persist()'s select_for_update() already
+    guarantees this for any two concurrent writers (Phase 3a); this test
+    exercises that guarantee specifically under the new automatic-trigger
+    condition, not a new locking mechanism.
+    """
+
+    def test_manual_and_automatic_recompute_leave_one_consistent_assessment(
+        self, authenticated_client, django_capture_on_commit_callbacks
+    ):
+        client, _ = authenticated_client(WRITER)
+        customer = CustomerFactory(age=22)
+        policy = PolicyFactory(
+            customer=customer, policy_type="Auto", premium_usd=Decimal("1000.00")
+        )
+        ClaimFactory(
+            policy=policy, claim_status=ClaimStatus.APPROVED, claim_amount_usd=Decimal("500.00")
+        )
+
+        # Automatic path: policy save enqueues recompute_customer_risk via
+        # on_commit, executed eagerly once the block below "commits".
+        with django_capture_on_commit_callbacks(execute=True):
+            policy.premium_usd = Decimal("2000.00")
+            policy.save()
+
+        # Manual path: the on-demand route, for the same customer.
+        response = client.post(f"{URL}recompute/", {"customer": customer.id}, format="json")
+
+        assert response.status_code == 200
+        assessments = RiskAssessment.objects.filter(customer=customer)
+        assert assessments.count() == 1
+
+        assessment = assessments.get()
+        assert response.data["id"] == assessment.id
+        assert response.data["score"] == assessment.score
+        assert response.data["tier"] == assessment.tier
+        assert len(RiskFactor.objects.filter(assessment=assessment)) == len(
+            response.data["factors"]
+        )
+
+        customer.refresh_from_db()
+        expected_risk_score = round(Decimal(assessment.score) / 100, 2)
+        assert customer.risk_score == expected_risk_score

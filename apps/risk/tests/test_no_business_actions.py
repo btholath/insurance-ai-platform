@@ -89,6 +89,7 @@ def test_engine_persist_only_writes_risk_and_audit_tables():
         "delete",
         "bulk_create",
         "save",
+        "update",
         # The two writes this function is allowed to make: a risk record,
         # via record_action, and the RiskFactor rows it constructs to pass
         # to bulk_create.
