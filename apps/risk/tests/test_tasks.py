@@ -216,6 +216,108 @@ class TestRetryBackoffIsDelayedAndIncreasing:
         assert second_countdown > first_countdown
 
 
+class TestExhaustedRetryWritesFailureRecord:
+    """
+    FR-010, Acceptance Scenario 1 (US3): when every retry attempt fails,
+    the task's on_failure handler (T035) writes one AuditLog entry
+    recording the permanent failure -- the "durable, discoverable record"
+    the spec requires, using the platform's existing audit mechanism
+    rather than a new alerting channel.
+
+    Uses task.apply() like TestRetrySucceedsAfterTransientFailure --
+    apply() runs the real (non-eager-bypassed) retry path regardless of
+    CELERY_TASK_ALWAYS_EAGER. Reaching actual exhaustion requires
+    surviving all 5 retries, not just the first: as
+    TestRetryBackoffIsDelayedAndIncreasing's second test documents,
+    apply()'s own recursive step for a caught Retry
+    (`retval.sig.apply(retries=retries + 1)`) does not forward `throw`, so
+    a bare `apply(throw=False)` only survives one retry before reverting
+    to the settings-derived default and raising. override_settings makes
+    every retry -- not just the first -- eager-non-propagating, which is
+    what lets exhaustion actually happen inside apply() instead of the
+    test failing on an uncaught Retry/exception partway through.
+    """
+
+    def test_exhausted_retries_write_one_recompute_failed_audit_entry(self):
+        customer = CustomerFactory(age=22)
+        RiskAssessmentFactory(customer=customer)
+
+        with override_settings(CELERY_TASK_EAGER_PROPAGATES=False), patch.object(
+            engine, "persist", side_effect=RuntimeError("permanent failure")
+        ):
+            result = recompute_customer_risk.apply(args=[customer.id])
+
+        assert not result.successful()
+
+        entries = AuditLog.objects.filter(action="risk.recompute_failed")
+        assert entries.count() == 1
+
+        entry = entries.get()
+        assert entry.outcome == "refused"
+        assert entry.context["customer_id"] == customer.id
+
+
+class TestExhaustedRetryDoesNotCrashOrCorrupt:
+    """
+    Acceptance Scenario 1 (US3), "without raising an unhandled error": the
+    worker process must survive permanent failure, and the customer's
+    existing RiskAssessment must be left exactly as it was -- a failed
+    recompute must never leave a partial or corrupted write behind, only
+    the absence of an update.
+    """
+
+    def test_exhausted_retries_leave_existing_assessment_untouched(self):
+        customer = CustomerFactory(age=22)
+        assessment = RiskAssessmentFactory(customer=customer, score=42)
+        original_score = assessment.score
+        original_computed_at = assessment.computed_at
+
+        with override_settings(CELERY_TASK_EAGER_PROPAGATES=False), patch.object(
+            engine, "persist", side_effect=RuntimeError("permanent failure")
+        ):
+            # Does not raise out of apply() -- on_failure handles the
+            # exhausted exception rather than letting it propagate, so the
+            # calling thread (a worker process, in production) survives.
+            result = recompute_customer_risk.apply(args=[customer.id])
+
+        assert not result.successful()
+
+        assessment.refresh_from_db()
+        assert assessment.score == original_score
+        assert assessment.computed_at == original_computed_at
+
+
+class TestFailureRecordDoesNotBlockFutureRecompute:
+    """
+    FR-011, Acceptance Scenario 2 (US3): an exhausted-retry failure record
+    for a customer must not make that customer permanently ineligible for
+    automatic recompute -- a later data change (simulated here by simply
+    invoking the task again, standing in for the next signal-triggered
+    enqueue) proceeds normally.
+    """
+
+    def test_fresh_invocation_after_exhaustion_succeeds_normally(self):
+        customer = CustomerFactory(age=22)
+        RiskAssessmentFactory(customer=customer)
+
+        with override_settings(CELERY_TASK_EAGER_PROPAGATES=False), patch.object(
+            engine, "persist", side_effect=RuntimeError("permanent failure")
+        ):
+            recompute_customer_risk.apply(args=[customer.id])
+
+        assert AuditLog.objects.filter(action="risk.recompute_failed").count() == 1
+
+        # A later invocation -- the earlier failure record must not
+        # short-circuit or block it in any way.
+        recompute_customer_risk(customer.id)
+
+        assessment = RiskAssessment.objects.get(customer=customer)
+        expected = engine.score_customer(customer)
+        assert assessment.score == expected.score
+        assert assessment.tier == expected.tier
+        assert AuditLog.objects.filter(action="risk.computed").exists()
+
+
 class TestRetryLeavesNoInconsistentState:
     """
     Acceptance Scenario 2 (US2): "no trace of the earlier failed attempt"
