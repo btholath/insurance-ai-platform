@@ -134,6 +134,39 @@ class TestAppendOnly:
             entry.delete()
 
 
+class TestRecomputeFailedEntryDistinguishable:
+    def test_recompute_failed_action_distinguishable_from_computed(self):
+        """
+        SC-005, data-model.md's action-value table: a permanently-failed
+        automatic recompute (Phase 3b's on_failure handler) writes
+        action="risk.recompute_failed", queryable and distinguishable from
+        a successful "risk.computed" entry by action name alone.
+        """
+        from unittest.mock import patch
+
+        from django.test import override_settings
+
+        from apps.customers.factories import CustomerFactory
+        from apps.risk.factories import RiskAssessmentFactory
+        from apps.risk.tasks import recompute_customer_risk
+
+        customer = scoreable_customer()
+        engine.persist(customer, engine.score_customer(customer), actor=None)
+
+        failing_customer = CustomerFactory(age=22)
+        RiskAssessmentFactory(customer=failing_customer)
+
+        with override_settings(CELERY_TASK_EAGER_PROPAGATES=False), patch.object(
+            engine, "persist", side_effect=RuntimeError("permanent failure")
+        ):
+            recompute_customer_risk.apply(args=[failing_customer.id])
+
+        assert AuditLog.objects.filter(action="risk.computed").exists()
+        failed_entries = AuditLog.objects.filter(action="risk.recompute_failed")
+        assert failed_entries.count() == 1
+        assert not failed_entries.filter(action="risk.computed").exists()
+
+
 class TestRefusedOperationsRecorded:
     def test_refused_recompute_is_recorded_by_the_registry_path(self, authenticated_client):
         """

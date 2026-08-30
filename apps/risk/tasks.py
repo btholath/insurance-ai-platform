@@ -12,16 +12,48 @@ triggered it (FR-018). Signals are the correct mechanism for exactly the
 reason they were the wrong one for audit writes; see research.md §1 for the
 full rationale.
 """
-from celery import shared_task
+import logging
 
+from celery import Task, shared_task
+
+from apps.audit.services import record_action
 from apps.customers.models import Customer
 
 from . import engine
 from .models import RiskAssessment
 
+logger = logging.getLogger(__name__)
+
+
+class RecomputeCustomerRiskTask(Task):
+    def on_failure(self, exc, task_id, args, kwargs, einfo):
+        customer_id = args[0]
+        assessment = RiskAssessment.objects.filter(customer_id=customer_id).first()
+        target_id = assessment.id if assessment is not None else customer_id
+
+        record_action(
+            actor=None,
+            action="risk.recompute_failed",
+            target_type="risk.RiskAssessment",
+            target_id=target_id,
+            outcome="refused",
+            context={
+                "customer_id": customer_id,
+                "exception": str(exc),
+                "attempts": self.request.retries,
+            },
+        )
+        logger.error(
+            "recompute_customer_risk permanently failed for customer_id=%s: %s",
+            customer_id,
+            exc,
+            extra={"customer_id": customer_id, "exception": str(exc)},
+        )
+
 
 @shared_task(
     bind=True,
+    base=RecomputeCustomerRiskTask,
     autoretry_for=(Exception,),
     retry_backoff=True,
     retry_backoff_max=600,
