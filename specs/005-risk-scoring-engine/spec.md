@@ -422,6 +422,12 @@ individual customers do not disclose whether that customer exists.
   is accompanied by absent, partial, or superseded factors.
 - **FR-036**: The computation MUST NOT be triggered automatically by the creation,
   modification, or archival of any customer, policy, or claim record.
+  > **Superseded** by `specs/006-automatic-risk-recompute/spec.md`: this
+  > requirement was scoped to this feature (Phase 3a) only, and automatic
+  > recompute now exists platform-wide, triggered exactly as this FR
+  > forbade — see 006's spec for the explicit, tested introduction of that
+  > behavior and its own rationale. A reader of this spec alone should not
+  > conclude automatic recompute still doesn't exist.
 - **FR-037**: The computation MUST read each customer's data as a single consistent
   snapshot, so a change occurring mid-computation cannot produce an assessment
   mixing old and new values.
@@ -541,6 +547,10 @@ individual customers do not disclose whether that customer exists.
 - **SC-011**: No score changes as a result of any customer, policy, or claim being
   created, modified, or archived — verified by changing such data and confirming the
   stored score is unchanged until a recompute is explicitly requested.
+  > **Superseded** by `specs/006-automatic-risk-recompute/spec.md` — see the
+  > FR-036 note above. The still-true, narrower claim this feature's own
+  > tests now verify is that no such change recomputes *synchronously*;
+  > an asynchronous recompute is enqueued and eventually applied.
 - **SC-012**: An assessment computed before a change to the customer's scoring data
   is identifiable as potentially out of date on retrieval, in 100% of such cases.
 - **SC-013**: After this feature runs, 0% of customers carry a stored risk score

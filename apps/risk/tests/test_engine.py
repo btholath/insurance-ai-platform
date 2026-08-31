@@ -175,14 +175,28 @@ class TestPersist:
         assert entry.after["rule_set_version"] == result.rule_set_version
 
 
-class TestNoAutomaticRecomputation:
+class TestNoSynchronousRecomputation:
     """
-    FR-036/SC-011 (T094): nothing recomputes a score as a side effect of
-    a customer, policy, or claim write -- not on create, not on an
-    ordinary update, and not on archival. Verified per entity because
-    each is a plausible place a signal handler could have been wired in
-    (a post_save on Customer, on Policy, on Claim) and each needs its own
-    proof of absence.
+    FR-036/SC-011 (T094), narrowed by Phase 3b (research.md §1, tasks.md
+    T042): a customer, policy, or claim write no longer leaves the score
+    untouched forever -- Phase 3b's whole point is that it eventually
+    recomputes, via `apps/risk/signals.py`'s post_save receivers enqueuing
+    `recompute_customer_risk` through `transaction.on_commit()`. What
+    still holds, and is what this class now proves, is the NARROWER claim
+    plan.md's Constitution Check calls for: no code path recomputes
+    *synchronously inside the request or the triggering model's own
+    save()* -- the stored score is provably unchanged the instant
+    `.save()` returns, before any commit hook has had a chance to run.
+
+    Each test pairs that immediate-unchanged assertion with the opposite
+    case -- the same write, but with `django_capture_on_commit_callbacks`
+    driving the deferred task to completion -- as a canary against a
+    silently broken trigger. Without this pairing, a test asserting only
+    "score didn't change" cannot distinguish "correctly deferred" from
+    "the on_commit wiring quietly stopped enqueueing anything", which is
+    exactly the failure mode a differently-broken introspection test
+    elsewhere in this file (see test_no_signal_handler_or_scheduled_task_
+    touches_risk_scoring's revision) suffered from for unrelated reasons.
     """
 
     def _persisted(self):
@@ -191,7 +205,7 @@ class TestNoAutomaticRecomputation:
         assessment = engine.persist(customer, result, actor=None)
         return customer, assessment
 
-    def test_changing_customer_does_not_touch_stored_score(self):
+    def test_changing_customer_does_not_touch_stored_score_synchronously(self):
         customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
@@ -203,7 +217,20 @@ class TestNoAutomaticRecomputation:
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
 
-    def test_archiving_customer_does_not_touch_stored_score(self):
+    def test_changing_customer_does_recompute_once_committed(
+        self, django_capture_on_commit_callbacks
+    ):
+        customer, assessment = self._persisted()
+        original_computed_at = assessment.computed_at
+
+        with django_capture_on_commit_callbacks(execute=True):
+            customer.name = "Changed Name"
+            customer.save()
+
+        assessment.refresh_from_db()
+        assert assessment.computed_at > original_computed_at
+
+    def test_archiving_customer_does_not_touch_stored_score_synchronously(self):
         customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
@@ -215,7 +242,33 @@ class TestNoAutomaticRecomputation:
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
 
-    def test_changing_a_policy_does_not_touch_stored_score(self):
+    def test_archiving_customer_enqueues_a_task_that_correctly_no_ops(
+        self, django_capture_on_commit_callbacks
+    ):
+        """
+        Unlike the other paired tests in this class, archiving a customer
+        is NOT expected to change computed_at even once the deferred task
+        runs: `recompute_customer_risk` looks the customer up through
+        `Customer.objects` (apps/risk/tasks.py), the default manager that
+        `apps/customers/models.py`'s CustomerManager filters to
+        `archived_at__isnull=True` -- so the just-archived row is
+        invisible to that lookup, `Customer.DoesNotExist` is raised inside
+        the task, and it returns having done nothing. This asserts that
+        specific no-op, not merely "unchanged", so a future change to
+        either the manager filter or the task's lookup would fail this
+        test rather than pass it by accident.
+        """
+        customer, assessment = self._persisted()
+        original_computed_at = assessment.computed_at
+
+        with django_capture_on_commit_callbacks(execute=True):
+            customer.archived_at = timezone.now()
+            customer.save()
+
+        assessment.refresh_from_db()
+        assert assessment.computed_at == original_computed_at
+
+    def test_changing_a_policy_does_not_touch_stored_score_synchronously(self):
         customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
@@ -228,7 +281,21 @@ class TestNoAutomaticRecomputation:
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
 
-    def test_archiving_a_policy_does_not_touch_stored_score(self):
+    def test_changing_a_policy_does_recompute_once_committed(
+        self, django_capture_on_commit_callbacks
+    ):
+        customer, assessment = self._persisted()
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+
+        with django_capture_on_commit_callbacks(execute=True):
+            policy.premium_usd = Decimal("9999.00")
+            policy.save()
+
+        assessment.refresh_from_db()
+        assert assessment.computed_at > original_computed_at
+
+    def test_archiving_a_policy_does_not_touch_stored_score_synchronously(self):
         customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
@@ -241,7 +308,21 @@ class TestNoAutomaticRecomputation:
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
 
-    def test_changing_a_claim_does_not_touch_stored_score(self):
+    def test_archiving_a_policy_does_recompute_once_committed(
+        self, django_capture_on_commit_callbacks
+    ):
+        customer, assessment = self._persisted()
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+
+        with django_capture_on_commit_callbacks(execute=True):
+            policy.archived_at = timezone.now()
+            policy.save()
+
+        assessment.refresh_from_db()
+        assert assessment.computed_at > original_computed_at
+
+    def test_changing_a_claim_does_not_touch_stored_score_synchronously(self):
         customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
@@ -255,7 +336,22 @@ class TestNoAutomaticRecomputation:
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
 
-    def test_archiving_a_claim_does_not_touch_stored_score(self):
+    def test_changing_a_claim_does_recompute_once_committed(
+        self, django_capture_on_commit_callbacks
+    ):
+        customer, assessment = self._persisted()
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+        claim = policy.claims.first()
+
+        with django_capture_on_commit_callbacks(execute=True):
+            claim.claim_amount_usd = Decimal("50000.00")
+            claim.save()
+
+        assessment.refresh_from_db()
+        assert assessment.computed_at > original_computed_at
+
+    def test_archiving_a_claim_does_not_touch_stored_score_synchronously(self):
         customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
@@ -269,7 +365,24 @@ class TestNoAutomaticRecomputation:
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
 
-    def test_creating_a_new_policy_for_an_assessed_customer_does_not_touch_stored_score(self):
+    def test_archiving_a_claim_does_recompute_once_committed(
+        self, django_capture_on_commit_callbacks
+    ):
+        customer, assessment = self._persisted()
+        original_computed_at = assessment.computed_at
+        policy = customer.policies.first()
+        claim = policy.claims.first()
+
+        with django_capture_on_commit_callbacks(execute=True):
+            claim.archived_at = timezone.now()
+            claim.save()
+
+        assessment.refresh_from_db()
+        assert assessment.computed_at > original_computed_at
+
+    def test_creating_a_new_policy_for_an_assessed_customer_does_not_touch_stored_score_synchronously(
+        self,
+    ):
         customer, assessment = self._persisted()
         original_score = assessment.score
         original_computed_at = assessment.computed_at
@@ -280,17 +393,49 @@ class TestNoAutomaticRecomputation:
         assert assessment.score == original_score
         assert assessment.computed_at == original_computed_at
 
+    def test_creating_a_new_policy_for_an_assessed_customer_does_recompute_once_committed(
+        self, django_capture_on_commit_callbacks
+    ):
+        customer, assessment = self._persisted()
+        original_computed_at = assessment.computed_at
 
-def test_no_signal_handler_or_scheduled_task_touches_risk_scoring():
+        with django_capture_on_commit_callbacks(execute=True):
+            PolicyFactory(customer=customer, policy_type="Health", premium_usd=Decimal("400.00"))
+
+        assessment.refresh_from_db()
+        assert assessment.computed_at > original_computed_at
+
+
+def test_no_signal_handler_or_scheduled_task_touches_risk_scoring_synchronously():
     """
-    FR-036/SC-011: the absence of a signal handler, post_save hook,
-    Celery task or scheduler wired to recompute risk is itself a
-    requirement, not an omission (tasks.md T094). This inspects the
-    actual receivers Django has connected for post_save/pre_save/
-    post_delete on Customer, Policy and Claim, rather than trusting that
-    grepping the source for "risk" would have caught an indirect wiring
-    (e.g. a receiver registered by name in a signals.py this repo does
-    not have).
+    FR-036/SC-011, narrowed by Phase 3b (tasks.md T042, plan.md's
+    Constitution Check post-Phase-1 note): the ORIGINAL claim here --
+    "the codebase contains no signal handler at all" connected to
+    Customer/Policy/Claim -- is now false by design (apps/risk/signals.py
+    exists precisely to enqueue automatic recompute). What must still
+    hold, and is what this test now proves, is the narrower claim: no
+    receiver connected to these signals calls into the scoring engine
+    (`engine.score_customer`/`engine.persist`) SYNCHRONOUSLY, inside the
+    signal dispatch itself. `apps.risk.signals`'s receivers are fine
+    precisely because all they do is schedule `recompute_customer_risk`
+    through `transaction.on_commit()` -- the actual scoring call happens
+    later, inside the deferred task, never on this call stack.
+
+    This inspects the actual receivers Django has connected, rather than
+    trusting that grepping the source for "risk" would have caught an
+    indirect wiring -- but unlike the pre-Phase-3b version of this test,
+    it does so correctly: `Signal._live_receivers()` in the Django version
+    this project pins returns a `(sync_receivers, async_receivers)`
+    2-TUPLE OF LISTS, not a flat list of receiver callables. The original
+    version's `for receiver in receivers:` iterated over that 2-tuple
+    itself -- binding `receiver` to each of the two inner lists, never to
+    an actual function -- so every `getattr(receiver, "__module__", "")`
+    silently fell through to the "" default and the assertion passed
+    vacuously regardless of what was actually connected, on both sides of
+    Phase 3b. Confirmed interactively: Customer/Policy/Claim's post_save
+    receivers report `__module__ is None` when misindexed this way, which
+    is what let this test pass throughout Phase 3b's signal wiring going
+    in without ever exercising the check it claims to perform.
     """
     from django.db.models.signals import post_delete, post_save, pre_save
 
@@ -300,12 +445,22 @@ def test_no_signal_handler_or_scheduled_task_touches_risk_scoring():
 
     for signal in (post_save, pre_save, post_delete):
         for sender in (Customer, Policy, Claim):
-            receivers = signal._live_receivers(sender)
-            for receiver in receivers:
-                module = getattr(receiver, "__module__", "")
-                qualname = getattr(receiver, "__qualname__", "")
-                assert "risk" not in module.lower(), (
+            sync_receivers, async_receivers = signal._live_receivers(sender)
+            for receiver in (*sync_receivers, *async_receivers):
+                module = getattr(receiver, "__module__", "") or ""
+                qualname = getattr(receiver, "__qualname__", "") or ""
+                assert module != "apps.risk.engine", (
                     f"{module}.{qualname} is connected to {signal} for {sender} "
-                    "-- this is exactly the kind of automatic recomputation "
-                    "FR-036 forbids"
+                    "-- a signal receiver must never call into the scoring "
+                    "engine synchronously; it must only enqueue the async "
+                    "recompute task via transaction.on_commit(), per "
+                    "apps/risk/signals.py"
+                )
+                assert qualname != "recompute_customer_risk", (
+                    f"{module}.{qualname} is connected directly to {signal} for "
+                    f"{sender} -- the Celery task itself must never be the "
+                    "receiver; only a signals.py wrapper calling .delay() "
+                    "inside transaction.on_commit() may be connected, so a "
+                    "rolled-back transaction can never enqueue a recompute "
+                    "for data that was never persisted"
                 )
