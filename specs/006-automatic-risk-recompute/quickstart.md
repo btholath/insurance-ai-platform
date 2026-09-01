@@ -161,6 +161,22 @@ task ran (check `docker compose logs celery-worker` for the no-op if you
 want to see it), and it correctly did nothing, because this customer has
 never been scored — that stays `computerisk`'s job.
 
+Delete this step's scratch customer and policy (the customer has no
+`RiskAssessment` to clean up, by this step's own assertion above) —
+skipping this leaves scratch rows accumulating in the persistent dev DB
+across quickstart runs, silently inflating counts checked in later steps
+(e.g. step 5's before/after row count):
+
+```bash
+docker compose exec web python manage.py shell -c "
+from apps.customers.models import Customer
+from apps.policies.models import Policy
+c = Customer.objects.get(client_id='<CLIENT_ID>')
+Policy.objects.filter(customer=c).delete()
+c.delete()
+"
+```
+
 ---
 
 ## Step 4 — A permanent failure produces a discoverable record (FR-010, SC-005, User Story 3)
