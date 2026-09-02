@@ -17,8 +17,8 @@ sub-phase actually happens.
 
 | Sub-phase | Status | Depends on |
 |---|---|---|
-| **3a — Risk Scoring Engine** | 🔄 In progress | Phase 2 (Customer/Policy/Claims all real) |
-| 3b — Automatic Recompute (Celery) | ⏳ Not started | 3a |
+| **3a — Risk Scoring Engine** | ✅ Complete | Phase 2 (Customer/Policy/Claims all real) |
+| **3b — Automatic Recompute (Celery)** | ✅ Complete | 3a |
 
 Split deliberately, mirroring Phase 2's Customer→Policy→Claims
 sequencing logic: get the scoring domain logic solid and fully tested
@@ -114,6 +114,43 @@ network interference — if it recurs, check `lsof -i :8000` first.
   if deployed standalone. The image still `COPY`s the source
   independently, so a deploy from the image alone remains
   self-contained; the mount only shadows it in dev.
+
+**New, established during 3b**:
+
+- **Claude Code's own recap/summary mechanism (shown in the status bar
+  or as a scheduled "wakeup" message) can surface stale or duplicate
+  content and should never be trusted over direct verification.**
+  During 3b this happened repeatedly — a stale recap claiming Phase 2b
+  was still in progress; a scheduled `/loop wakeup` firing after work
+  was already done and committed; the same terminal transcript
+  re-uploaded multiple times across real minutes/hours apart. Every
+  instance was resolved the same way: check `git log`/`git status`
+  directly rather than trust the recap's framing of "what's currently
+  true."
+- **A single terminal window can genuinely hang (three consecutive
+  git commands returning zero output, not even an error) without any
+  actual repository damage.** Confirmed during 3b's final wrap-up:
+  the correct response is to close that window and open a completely
+  fresh one, `cd` back into the project, and re-run the check there —
+  not to keep re-querying a frozen shell or assume the worst about
+  repository state based on a display problem. A `git push`'s own
+  real-time confirmation from GitHub (the `remote:`/`... -> main`
+  lines) is independent, external proof work is safe, regardless of
+  what a later, unrelated terminal glitch might suggest.
+- **If a completion summary in an already-pushed commit message turns
+  out to be wrong or incomplete, correct it with a new, honest commit
+  — don't rewrite history to hide it.** `2ffc0d1`'s own commit message
+  credited the `3001`-vs-`3000` count discrepancy entirely to a
+  3-week-old `CustomerFactory`-sequence artifact — true but
+  incomplete, and on its own insufficient to explain the discrepancy.
+  Once the real, fuller cause was found (see §5's Phase 3b entry),
+  rather than `commit --amend` (which would have silently altered
+  already-shared history) or leave the inaccurate explanation
+  standing, commit `ca2f72d` stated plainly what the original message
+  got wrong and why, preserving an honest, if imperfect, record —
+  consistent with this entire runbook's own standard for its authors,
+  now demonstrated by Claude Code applying it to its own git history
+  too.
 
 ---
 
@@ -426,7 +463,230 @@ the first time, on top of an on-demand engine now fully proven.
 
 ---
 
-## 5. Progress log
+## 5. Phase 3b — Automatic Recompute via Celery (complete)
+
+### 5.1 What it delivers
+
+Every risk assessment now stays current automatically. A `post_save`
+signal on Customer, Policy, or Claim enqueues a Celery task
+(`recompute_customer_risk`) via `transaction.on_commit()`, which calls
+the *exact same* `engine.score_customer()`/`persist()` pair every
+existing path (the manual API endpoint, `computerisk`) already used —
+this feature adds a trigger, not a second scoring implementation. The
+manual on-demand path from 3a remains fully available, unchanged,
+protected by its own dedicated regression-safety user story. This is
+the first time Celery is actually used in this project, after Redis
+sat provisioned-but-idle since Phase 1's Foundational plan explicitly
+deferred it.
+
+### 5.2 Spec, plan, and tasks — scoped deliberately before any code existed
+
+Three real design questions were decided explicitly via interactive
+Q&A before `/speckit-specify` ran, not defaulted: trigger broadly on
+Customer, Policy, *and* Claim changes (matching 3a's own
+over-reporting staleness philosophy, rather than fine-grained field
+tracking); failed tasks retry with backoff and alert only once
+exhausted; and — the one requiring real thought — how to avoid
+flooding Celery when `loaddataset` touches all ~3,000 customers/
+policies on every run. **The answer chosen: let it flood, deliberately.**
+`persist()`'s existing idempotency guarantees correctness regardless of
+how many redundant tasks run; efficiency was explicitly named a future
+optimization, not required now — a conscious, documented tradeoff, not
+an oversight.
+
+**The plan's two sharpest pieces of reasoning**, both independently
+verified against the actual codebase before being trusted:
+- **`transaction.on_commit()` for the enqueue is the deliberate
+  opposite of `apps/audit/services.py`'s "no signals, no on_commit"
+  stance** — and the plan states precisely why both are correct: an
+  audit write must share its triggering transaction (so a failure
+  rolls both back together), while a recompute enqueue must *never* be
+  allowed to fail the write that triggered it. Two decisions,
+  deliberately opposite, both justified from the same first
+  principles.
+- **A genuine tension with an already-passing Phase 3a test, named
+  rather than silently broken.** Phase 3a's own `test_engine.py`
+  asserted *the codebase contains no signal handler at all* —
+  something this feature necessarily violates. The plan stated
+  directly: *"this is the one point where this feature deliberately
+  departs from an explicit prior decision, and that departure needs to
+  be named, not smoothed over,"* specifying the correct resolution in
+  advance: **revise**, not delete, narrowing the claim to what still
+  holds (nothing recomputes *synchronously*).
+
+Two proactive, unprompted task additions (`T043`/`T044`) exist purely
+to document *why* signals are used here after being rejected elsewhere
+— *"so the next reader doesn't 'fix' this into consistency with the
+audit module's convention"* — the same guardrail pattern as Phase 2b's
+`T071` (*"fix the per-module entry, never the shared handler"*).
+
+Committed across two commits (`9fa7f74`, `8488da4`) — the second fixing
+three small issues found on independent review: `T014`-`T016`'s wording
+implying a `ready()` method already existed to "edit" (it didn't, per a
+direct `grep` check), and `T029`'s unresolved file-placement hedge.
+
+### 5.3 Implementation — a genuine infinite-recursion bug, and the most important self-correction in this entire project
+
+**A real, production-serious bug, found through patient, honest
+debugging under real pressure.** `engine.persist()`'s existing
+`Customer.save()` call to mirror the score onto the customer bumped
+`updated_at` via `auto_now` — which, once Phase 3b's signal was wired
+up, re-fired `post_save` and re-enqueued a recompute of the *same*
+customer, which called `persist()` again, which saved again,
+recursing without bound. Under Celery's eager test mode this executed
+synchronously rather than merely queuing infinitely, hanging the test
+suite outright. **Two hypotheses were tested and correctly rejected
+before the real cause was found** — a nested-`atomic()` theory,
+disproven with a minimal repro; orphaned Postgres locks from repeated
+hard-kills of the hung process, a real but secondary consequence, not
+the root cause. The actual chain (`persist()` → `save()` → signal →
+re-enqueue → `persist()`) was traced via `pg_stat_activity` and
+explicit, honest labeling of what was self-inflicted noise versus what
+was the real bug.
+
+**The fix — `.update()` instead of `.save()` for the risk-mirror
+write — was chosen over a signal-guard/sentinel alternative for a
+concurrency reason, not convenience.** A flag suppressing "was this
+save triggered from inside `persist()`" is a well-known fragile
+pattern under genuinely concurrent Celery workers; `.update()` is
+stateless and structurally cannot race. The fix also set
+`updated_at`/`computed_at` from the *same* captured timestamp,
+eliminating — by construction, not by careful sequencing — the exact
+class of bug Phase 3a's own `T033` had once fixed by ordering alone.
+Verified via a dedicated re-run of `test_staleness.py` specifically,
+confirming the earlier fix's guarantee still held under the new
+mechanism (`9c17e5d`).
+
+**The single most valuable finding of this entire multi-week
+project**, surfaced while completing `T042` (the test revision the
+plan had already committed to): the original `test_no_signal_handler_
+or_scheduled_task_touches_risk_scoring` had been **passing for the
+wrong reason since it was first written in Phase 3a** — Django 5.1's
+`Signal._live_receivers()` returns a 2-tuple of `(sync_receivers,
+async_receivers)` lists, and the test's `for receiver in receivers:`
+was iterating over that tuple itself, binding `receiver` to a *list*,
+never an actual function. `getattr(a_list, "__module__", "")` silently
+fell through to `""`, so the assertion was unconditionally true —
+**this guard rail could never have failed, no matter what was ever
+wired up, throughout the entirety of both Phase 3a and Phase 3b's own
+implementation.** Found not by guessing, but by someone actually
+reading Django's real return type instead of trusting an inherited
+assumption. Fixed with a corrected, properly-unpacked iteration and
+two more precise assertions; new paired tests (immediate-unchanged +
+eventually-recomputes-via-`on_commit`) now specifically guard against
+this exact class of silently-non-functional assertion recurring
+(`9e35c80`).
+
+**Two more genuine gaps, both self-caught during close review, not
+found by external pressure:**
+- `apps/risk/tests/test_no_business_actions.py`'s AST allowlist —
+  itself a test *about* which ORM methods production code may call —
+  had never been updated to permit `.update()` when the recursion fix
+  landed, meaning it should have been failing (or silently not
+  covering the new path) since that commit, until caught during
+  `T030`'s regression sweep (`7f8d7e6`).
+- `scripts/entrypoint.sh` was hardcoded to always launch `gunicorn`,
+  ignoring any `command:` override — which would have silently made
+  the new `celery-worker` service just run the web server instead of
+  a worker. Found and fixed before it could ship unnoticed.
+
+**A `tasks.md` process gap recurred, and was resolved with the same
+discipline as Phase 3a's own version of this exact problem**: after
+six real implementation commits, the file still showed zero tasks
+checked. Confirmed genuine (not a stale-file mixup) by checking the
+file's own timestamp against commit history, then reconciled non-bulk
+and spot-checked at a specific task boundary before being trusted
+(`d92a448`).
+
+**Final verified state**: all 49 tasks complete across the full
+implementation arc (`9c17e5d` through `2ffc0d1`). Full suite: **1084
+passed, 0 failed**. **100% coverage on every file in `apps/risk/`**,
+including the two new files this feature added (`tasks.py`,
+`signals.py`).
+
+### 5.4 The dev-database verification — two real writes, both explicitly approved, and one honestly-corrected finding
+
+Both `T048` (read-only-adjacent, still confirmed before writing
+throwaway data) and `T049` (a forced permanent failure, and a real
+`loaddataset` re-run touching ~3,000 rows) were run live against the
+persistent dev stack, each only after explicit go-ahead — the same
+standing boundary established after Phase 2a's incident, holding
+without exception through Phase 3b's two heaviest writes.
+
+`T049`'s `loaddataset` step is the strongest single proof in this
+sub-phase: a SHA-256 hash of every `(customer_id, score, tier)` row
+was captured, the reload was run for real (not simulated), the
+resulting flood of ~3,000 redundant recompute tasks was confirmed
+fully drained via the Celery queue depth, and the hash was
+re-computed and found **identical**. The accepted `loaddataset`-
+redundancy tradeoff from §5.2 is not merely designed correctly — it
+was proven correct, once, for real, against genuine volume.
+
+**A count discrepancy (`3001` vs. the expected `3000`) was initially
+waved off — *"let me not worry about that discrepancy now"* — and,
+when pressed to actually trace it rather than accept the dismissal,
+was investigated properly and its real, complete cause found.** The
+first explanation offered (a single leftover `CustomerFactory`-
+sequenced customer, `CL-90000`, three weeks old) was real but
+**incomplete on its own** — insufficient by itself to produce the
+discrepancy. The fuller cause, found on continued digging: `quickstart.
+md`'s own Step 3 cleanup only ever deleted the throwaway *auth users*
+it created, never the *customer and policy rows* those users had
+created — meaning **each prior run of this exact quickstart step had
+been silently leaving scratch data behind in the persistent dev
+database.** Two such leaked customers (`CL-90001` from an earlier
+session, `CL-90002` from this one) were found, confirmed to carry no
+`RiskAssessment` first, then deleted — and `quickstart.md` itself was
+permanently fixed to delete its own scratch rows going forward, so
+this exact drift cannot recur.
+
+**Worth stating plainly**: the first commit (`2ffc0d1`) credited only
+the incomplete explanation. Rather than quietly let that stand once
+the fuller cause was found, or rewrite already-pushed history to hide
+the gap, a second commit (`ca2f72d`) stated openly what the original
+message got wrong and why — see §2's new standing rule, which this
+exact sequence established.
+
+Committed across nine implementation-and-verification commits in
+total for this final stretch (`eecc763` through `ca2f72d`).
+
+---
+
+## 6. Phase 3 — complete
+
+**Both halves of the Risk Engine are done.** 3a built a transparent,
+on-demand, explainable scoring engine — the platform's first real
+exercise of constitution Principle IV. 3b made it automatic, without
+weakening any of 3a's guarantees: the manual path is provably
+unaffected, every score remains traceable to a persisted explanation,
+and the append-only audit trail now distinguishes successful
+computation, permanent failure, and human-triggered recompute as three
+genuinely distinct, queryable outcomes.
+
+**Real bugs found across the full Risk Engine phase, all through
+actually running the system, none through however-careful a static
+read**: the `90`-vs-`100` scale documentation error (3a); an infinite
+signal-recursion bug with real production consequences (3b); and, the
+standout of the entire project so far, a guard-rail test that had
+been passing for the wrong reason since the moment it was first
+written, discovered only by reading a framework's real behavior
+instead of trusting an inherited assumption.
+
+**The throughline holds a third time, across a genuinely different
+kind of complexity than Phases 1 and 2 ever introduced** — the first
+real concurrency, the first real background worker, the first real
+async task queue in this project. Static review, careful specs, and
+well-reasoned plans all mattered and all helped. None of them, alone,
+would have caught the recursion bug or the vacuous test. Only running
+the system, under real conditions, ever has.
+
+**Next**: Phase 4 (AI/LLM Integration) — not started, to begin in a
+future session.
+
+---
+
+## 7. Progress log
+
 
 **2026-08-17 to 2026-08-18** — Phase 3a spec, plan, and analyze
 remediation complete; implementation started and partially complete.
@@ -492,3 +752,37 @@ overall, dev database confirmed clean at 3,000 customers. Committed
 across `15396ee` and `2272284`, both pushed, `origin/main` confirmed
 matching local `HEAD`. **Phase 3a is done.** Next: Phase 3b
 (automatic recompute via Celery).
+
+**2026-08-21 to 2026-09-01 — Phase 3b complete; Phase 3 (Risk Engine)
+complete.** Automatic recompute via Celery, the first background
+worker and first real async task queue in this project. Spec/plan
+scoped three real decisions deliberately (broad trigger, retry/
+backoff-then-alert, accept `loaddataset`'s redundant-task flood rather
+than solve it), and correctly named a genuine tension with an
+already-passing Phase 3a test (*"the codebase contains no signal
+handler"*) as something to revise, not silently break. Implementation
+surfaced a real, production-serious infinite-recursion bug
+(`persist()` → `save()` → signal → re-enqueue → `persist()`), fixed
+via `.update()` over a signal-guard specifically for concurrency
+safety, chosen and explained rather than assumed. Found, while
+completing the planned test revision, the single most valuable
+finding of the whole project to date: a guard-rail test that had been
+passing for the wrong reason - a Django API return-shape
+misunderstanding - since the moment it was first written in Phase 3a,
+meaning it could never have failed regardless of what was ever wired
+up, through the entirety of both sub-phases. Two more genuine gaps
+self-caught during review (a stale AST allowlist, an entrypoint script
+ignoring command overrides). The dev-database verification proved the
+`loaddataset`-redundancy tradeoff correct via a real SHA-256 hash
+match across ~3,000 rows, and an initially-dismissed count discrepancy
+was, on request, traced to its real and complete cause (leaked
+quickstart scratch data across two prior sessions, not just the
+single artifact first credited) - with the resulting correction made
+as a new, honest commit rather than a silent rewrite of already-pushed
+history. Final: 49/49 tasks, 1084/1084 tests, 100% coverage on every
+`apps/risk/` file. Committed across `9fa7f74` through `ca2f72d`
+(twenty-one commits total for the sub-phase), all pushed and
+independently confirmed via a fresh terminal after one window
+appeared to hang. **Phase 3 (on-demand + automatic risk scoring) is
+done.** Next: Phase 4 (AI/LLM Integration), to begin in a future
+session.
