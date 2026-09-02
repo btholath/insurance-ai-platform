@@ -14,4 +14,8 @@ urlpatterns = [
     # every risk refusal would be audited as a customer refusal against the
     # wrong role set. See specs/005-risk-scoring-engine/research.md §1.
     path("api/risk/", include("apps.risk.urls")),
+    # Also top-level, for the same reason as risk above: a nested path would
+    # fall under an existing audit_routes prefix and mis-audit every prompt
+    # refusal under another module's role set.
+    path("api/prompts/", include("apps.prompts.urls")),
 ]

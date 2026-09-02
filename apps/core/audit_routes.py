@@ -172,6 +172,51 @@ def register_defaults():
             write_roles=(Role.CLAIMS_ADJUSTER, Role.SYSTEM_ADMINISTRATOR),
         )
     )
+    register(
+        AuditedRoute(
+            prefix="/api/prompts/",
+            target_type="prompts.PromptTemplate",
+            action_prefix="prompt",
+            # ALL NINE roles -- the first universal view set here, against
+            # Customer's seven, Policy's eight, Claim's five and Risk's five.
+            #
+            # Every one of those four sets exists to protect an individual's
+            # data. A prompt template holds field NAMES, never field VALUES:
+            # it declares what a future narrative may draw on and discloses
+            # nothing about any customer. There is no individual here to
+            # protect, so narrowing this would copy the shape of the other
+            # entries without their reason.
+            #
+            # Executive Leadership is the sharp case, and the reverse of the
+            # usual one: it is absent from all four sets above and present
+            # here. A leadership reader may see which fields an executive
+            # summary is permitted to cite while still having no record-level
+            # access to a single customer, policy or claim.
+            view_roles=(
+                Role.CUSTOMER_SERVICE,
+                Role.SYSTEM_ADMINISTRATOR,
+                Role.UNDERWRITER,
+                Role.CLAIMS_ADJUSTER,
+                Role.FRAUD_ANALYST,
+                Role.RISK_MANAGER,
+                Role.COMPLIANCE_OFFICER,
+                Role.PRODUCT_MANAGER,
+                Role.EXECUTIVE_LEADERSHIP,
+            ),
+            # ONE role -- also a first. The four entries above each pair a
+            # business role with System Administrator (Customer Service,
+            # Underwriter, Claims Adjuster, Risk Manager). Prompt templates
+            # are administrative configuration, not any business role's
+            # domain, so there is no second role with a defensible claim and
+            # pairing one in for symmetry would invent an owner.
+            #
+            # Phase 4a exposes no write route at all -- the library lives in
+            # code. This set is registered anyway because roles_for()
+            # consults it to classify a write-method refusal.
+            write_roles=(Role.SYSTEM_ADMINISTRATOR,),
+        )
+    )
+
     # The anomaly routes at /api/claims/anomalies/ need NO second entry:
     # match() selects the longest matching prefix, they are nested under
     # this one, and they share its role sets exactly (FR-047). If anomalies
